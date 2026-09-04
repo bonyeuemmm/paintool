@@ -29,24 +29,26 @@ def authenticate():
     if not hwid:
         hwid = "android_default_hwid"
 
+    
     if os.path.exists(LICENSE_FILE):
         with open(LICENSE_FILE, "r") as f:
             input_key = f.read().strip()
-        print("\033[1;35m[*] Checking saved license...\033[0m")
         
-        try:
-            payload = {"key": input_key, "hwid": hwid}
-            res = requests.post(API_URL, json=payload)
-            if '"valid":true' in res.text:
-                print("\033[1;37m[+] Automatic license verification successful!\033[0m")
-                time.sleep(1)
-                return
-            else:
-                print("\033[1;31m[!] Key expired or device changed. Please re-enter!\033[0m")
-                if os.path.exists(LICENSE_FILE):
-                    os.remove(LICENSE_FILE)
-        except Exception:
-            pass
+        if input_key:
+            print("\033[1;35m[*] Checking saved license...\033[0m")
+            try:
+                payload = {"key": input_key, "hwid": hwid}
+                res = requests.post(API_URL, json=payload)
+                if '"valid":true' in res.text:
+                    print("\033[1;37m[+] Automatic license verification successful!\033[0m")
+                    time.sleep(1)
+                    return
+                else:
+                    print("\033[1;33m[!] Saved key is invalid or expired. Please enter a new key.\033[0m")
+                    if os.path.exists(LICENSE_FILE):
+                        os.remove(LICENSE_FILE)
+            except Exception:
+                pass
 
     while True:
         os.system('clear')
@@ -192,7 +194,6 @@ def start_tool():
         pass
 
 if __name__ == "__main__":
-    # Đã loại bỏ hoàn toàn lệnh ép gọi su, chạy trực tiếp ổn định
     authenticate()
 
     while True:
@@ -311,14 +312,14 @@ if __name__ == "__main__":
                 input_custom_pkg = input("Enter roblox package name: ").strip()
                 if not input_custom_pkg:
                     input_custom_pkg = "com.roblox.client"
-                ROBLOX_CREDENTIALS = input_creds
+                ROBLOK_CREDENTIALS = input_creds
                 PACKAGE_NAME = input_custom_pkg
                 print(f"\033[1;37m[+] Logging into Roblox with package {PACKAGE_NAME}...\033[0m")
                 subprocess.run(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
                 time.sleep(3)
                 print("\033[1;37m[+] Configured and started application successfully!\033[0m")
             else:
-                ROBLOX_CREDENTIALS = ""
+                ROBLOK_CREDENTIALS = ""
                 print("\033[1;33m[-] Login configuration cancelled.\033[0m")
             time.sleep(2)
         elif choice == "7":
