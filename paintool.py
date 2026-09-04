@@ -6,7 +6,7 @@ import requests
 import json
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
-LICENSE_FILE = "/data/local/tmp/.pain_license"
+LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
 PACKAGE_NAME = "com.roblox.client"
 TARGET_LINK = ""
@@ -97,8 +97,12 @@ def authenticate():
                 is_valid = '"valid":true' in res.text.replace(" ", "")
 
             if is_valid:
-                with open(LICENSE_FILE, "w") as f:
-                    f.write(input_key)
+                try:
+                    with open(LICENSE_FILE, "w") as f:
+                        f.write(input_key)
+                except Exception as write_err:
+                    print(f"\033[1;33m[!] Warning: Could not save license locally ({write_err})\033[0m")
+
                 print("\033[1;37m[+] License verification successful! Device locked.\033[0m")
                 time.sleep(1.5)
                 break
