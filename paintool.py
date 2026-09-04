@@ -17,19 +17,29 @@ DELAY_MINUTES = 1
 WEBHOOK_INTERVAL = 1
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
-def authenticate():
-    global LICENSE_FILE
-    input_key = ""
-    
+def get_hwid():
+    hwid = ""
     try:
         hwid = subprocess.check_output(["settings", "get", "secure", "android_id"]).decode().strip()
     except Exception:
-        hwid = ""
-    
-    if not hwid:
-        hwid = "android_default_hwid"
+        pass
 
-    
+    if not hwid or hwid == "null":
+        try:
+            hwid = subprocess.check_output(["getprop", "ro.serialno"]).decode().strip()
+        except Exception:
+            pass
+
+    if not hwid or hwid == "null":
+        hwid = "android_default_hwid"
+        
+    return hwid
+
+def authenticate():
+    global LICENSE_FILE
+    input_key = ""
+    hwid = get_hwid()
+
     if os.path.exists(LICENSE_FILE):
         with open(LICENSE_FILE, "r") as f:
             input_key = f.read().strip()
@@ -38,13 +48,20 @@ def authenticate():
             print("\033[1;35m[*] Checking saved license...\033[0m")
             try:
                 payload = {"key": input_key, "hwid": hwid}
-                res = requests.post(API_URL, json=payload)
-                if '"valid":true' in res.text:
+                res = requests.post(API_URL, json=payload, timeout=10)
+                
+                try:
+                    data = res.json()
+                    is_valid = data.get("valid") is True or data.get("status") == "success"
+                except Exception:
+                    is_valid = '"valid":true' in res.text.replace(" ", "")
+
+                if is_valid:
                     print("\033[1;37m[+] Automatic license verification successful!\033[0m")
                     time.sleep(1)
                     return
                 else:
-                    print("\033[1;33m[!] Saved key is invalid or expired. Please enter a new key.\033[0m")
+                    print("\033[1;33m[!] Saved key is invalid, expired, or HWID mismatched.\033[0m")
                     if os.path.exists(LICENSE_FILE):
                         os.remove(LICENSE_FILE)
             except Exception:
@@ -55,6 +72,7 @@ def authenticate():
         print("\033[1;35m==================================================\033[0m")
         print("\033[1;37m          PAIN TOOL REJOIN VIP - AUTH             \033[0m")
         print("\033[1;35m==================================================\033[0m")
+        print(f"\033[1;36m Current HWID: {hwid}\033[0m")
         print("\033[1;37m[!] Please enter Tool Key (pain_key_...) to continue.\033[0m")
         print("\033[1;35m(Type 'exit' or '0' to quit)\033[0m")
         print("\033[1;35m==================================================\033[0m")
@@ -70,18 +88,24 @@ def authenticate():
         print("\033[1;35m[*] Connecting to server to verify key...\033[0m")
         try:
             payload = {"key": input_key, "hwid": hwid}
-            res = requests.post(API_URL, json=payload)
-            response_text = res.text
+            res = requests.post(API_URL, json=payload, timeout=10)
             
-            if '"valid":true' in response_text:
+            try:
+                data = res.json()
+                is_valid = data.get("valid") is True or data.get("status") == "success"
+            except Exception:
+                is_valid = '"valid":true' in res.text.replace(" ", "")
+
+            if is_valid:
                 with open(LICENSE_FILE, "w") as f:
                     f.write(input_key)
                 print("\033[1;37m[+] License verification successful! Device locked.\033[0m")
                 time.sleep(1.5)
                 break
             else:
-                print(f"\033[1;31m[!] Failed: Invalid key or wrong HWID\033[0m")
-                time.sleep(2)
+                print(f"\033[1;31m[!] Failed: Invalid key or HWID mismatch.\033[0m")
+                print(f"\033[1;33m[*] Server response: {res.text.strip()}\033[0m")
+                time.sleep(3)
         except Exception as e:
             print(f"\033[1;31m[!] Connection error: {e}\033[0m")
             time.sleep(2)
@@ -312,14 +336,14 @@ if __name__ == "__main__":
                 input_custom_pkg = input("Enter roblox package name: ").strip()
                 if not input_custom_pkg:
                     input_custom_pkg = "com.roblox.client"
-                ROBLOK_CREDENTIALS = input_creds
+                ROBLOX_CREDENTIALS = input_creds
                 PACKAGE_NAME = input_custom_pkg
                 print(f"\033[1;37m[+] Logging into Roblox with package {PACKAGE_NAME}...\033[0m")
                 subprocess.run(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
                 time.sleep(3)
                 print("\033[1;37m[+] Configured and started application successfully!\033[0m")
             else:
-                ROBLOK_CREDENTIALS = ""
+                ROBLOX_CREDENTIALS = ""
                 print("\033[1;33m[-] Login configuration cancelled.\033[0m")
             time.sleep(2)
         elif choice == "7":
