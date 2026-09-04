@@ -21,7 +21,6 @@ def authenticate():
     global LICENSE_FILE
     input_key = ""
     
-   
     try:
         hwid = subprocess.check_output(["settings", "get", "secure", "android_id"]).decode().strip()
     except Exception:
@@ -152,7 +151,6 @@ def start_tool():
 
     try:
         while True:
-            
             pid_res = subprocess.run(["pidof", PACKAGE_NAME], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             pid = pid_res.stdout.decode().strip()
             
@@ -166,7 +164,6 @@ def start_tool():
                 time.sleep(10)
                 elapsed_time = 0
             else:
-                
                 logcat_res = subprocess.run(["logcat", "-d", "-s", "Unity:V", "AndroidRuntime:E"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 log_output = logcat_res.stdout.decode()
                 
@@ -195,11 +192,7 @@ def start_tool():
         pass
 
 if __name__ == "__main__":
-    
-    if os.geteuid() != 0:
-        print("\033[1;33m[*] Đang chuyển sang quyền root (su)...\033[0m")
-        os.execvp("su", ["su", "-0", "-c", sys.executable] + sys.argv)
-    
+    # Đã loại bỏ hoàn toàn lệnh ép gọi su, chạy trực tiếp ổn định
     authenticate()
 
     while True:
