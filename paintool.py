@@ -5,7 +5,7 @@ import subprocess
 import requests
 import json
 
-API_URL = "https://discord-license-bot-production.up.railway.app"
+API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = "/data/local/tmp/.pain_license"
 
 PACKAGE_NAME = "com.roblox.client"
