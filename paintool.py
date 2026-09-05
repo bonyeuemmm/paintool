@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import subprocess
-import requests
 import json
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
@@ -35,19 +34,27 @@ def get_hwid():
         
     return hwid
 
-def check_license_online(key, hwid):
+def check_license_curl(key, hwid):
     try:
-        payload = {"key": key, "hwid": hwid}
-        res = requests.post(API_URL, json=payload, timeout=10)
-        if res.status_code == 200:
-            try:
-                data = res.json()
-                if isinstance(data, dict):
-                    return data.get("valid") is True or data.get("status") == "success", res.text.strip()
-            except Exception:
-                pass
-            return "valid" in res.text.lower() and "true" in res.text.lower(), res.text.strip()
-        return False, f"HTTP Error {res.status_code}"
+        payload = json.dumps({"key": key, "hwid": hwid})
+        cmd = [
+            "curl", "-s", "-X", "POST", API_URL,
+            "-H", "Content-Type: application/json",
+            "-d", payload,
+            "--connect-timeout", "10"
+        ]
+        res_text = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+        
+        try:
+            data = json.loads(res_text)
+            if isinstance(data, dict):
+                is_valid = data.get("valid") is True or data.get("status") == "success"
+                return is_valid, res_text.strip()
+        except Exception:
+            pass
+            
+        is_valid = '"valid":true' in res_text.replace(" ", "").lower() or '"status":"success"' in res_text.replace(" ", "").lower()
+        return is_valid, res_text.strip()
     except Exception as e:
         return False, str(e)
 
@@ -63,7 +70,7 @@ def authenticate():
             
             if input_key:
                 print("\033[1;35m[*] Đang kiểm tra Key đã lưu...\033[0m")
-                is_valid, _ = check_license_online(input_key, hwid)
+                is_valid, _ = check_license_curl(input_key, hwid)
                 if is_valid:
                     print("\033[1;32m[+] Tự động xác thực bản quyền thành công!\033[0m")
                     time.sleep(1)
@@ -94,7 +101,7 @@ def authenticate():
             continue
 
         print("\033[1;35m[*] Đang kết nối máy chủ để xác minh Key...\033[0m")
-        is_valid, response_text = check_license_online(input_key, hwid)
+        is_valid, response_text = check_license_curl(input_key, hwid)
 
         if is_valid:
             try:
@@ -142,13 +149,21 @@ def send_webhook_with_image(message):
     if WEBHOOK_URL:
         try:
             subprocess.run(["screencap", "-p", SCREENSHOT_PATH], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            payload_json = json.dumps({"content": message})
+            
             if os.path.exists(SCREENSHOT_PATH):
-                with open(SCREENSHOT_PATH, "rb") as f:
-                    files = {"file": f}
-                    payload = {"payload_json": json.dumps({"content": message})}
-                    requests.post(WEBHOOK_URL, data=payload, files=files)
+                cmd = [
+                    "curl", "-s", "-X", "POST", WEBHOOK_URL,
+                    "-F", f"payload_json={payload_json}",
+                    "-F", f"file=@{SCREENSHOT_PATH}"
+                ]
             else:
-                requests.post(WEBHOOK_URL, json={"content": message})
+                cmd = [
+                    "curl", "-s", "-X", "POST", WEBHOOK_URL,
+                    "-H", "Content-Type: application/json",
+                    "-d", payload_json
+                ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
