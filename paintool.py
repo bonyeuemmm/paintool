@@ -16,51 +16,50 @@ DELAY_MINUTES = 1
 WEBHOOK_INTERVAL = 1
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
-def get_hwid():
-    hwid = ""
+def run_cmd(cmd_list):
+    """Chạy lệnh hệ thống an toàn không gây crash C-level"""
     try:
-        hwid = subprocess.check_output(["settings", "get", "secure", "android_id"]).decode().strip()
+        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=10)
+        return res.stdout.strip()
     except Exception:
-        pass
+        return ""
 
+def get_hwid():
+    hwid = run_cmd(["settings", "get", "secure", "android_id"])
     if not hwid or hwid == "null":
-        try:
-            hwid = subprocess.check_output(["getprop", "ro.serialno"]).decode().strip()
-        except Exception:
-            pass
-
+        hwid = run_cmd(["getprop", "ro.serialno"])
     if not hwid or hwid == "null":
         hwid = "android_default_hwid"
-        
     return hwid
 
 def check_license_curl(key, hwid):
     try:
         payload = json.dumps({"key": key, "hwid": hwid})
-        cmd = [
+        res_text = run_cmd([
             "curl", "-s", "-X", "POST", API_URL,
             "-H", "Content-Type: application/json",
             "-d", payload,
             "--connect-timeout", "10"
-        ]
-        res_text = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+        ])
         
+        if not res_text:
+            return False, "Khong ket noi duoc den server (Curl Error)"
+
         try:
             data = json.loads(res_text)
             if isinstance(data, dict):
                 is_valid = data.get("valid") is True or data.get("status") == "success"
-                return is_valid, res_text.strip()
+                return is_valid, res_text
         except Exception:
             pass
             
-        is_valid = '"valid":true' in res_text.replace(" ", "").lower() or '"status":"success"' in res_text.replace(" ", "").lower()
-        return is_valid, res_text.strip()
+        is_valid = ("valid" in res_text.lower() and "true" in res_text.lower()) or "success" in res_text.lower()
+        return is_valid, res_text
     except Exception as e:
         return False, str(e)
 
 def authenticate():
     global LICENSE_FILE
-    input_key = ""
     hwid = get_hwid()
 
     if os.path.exists(LICENSE_FILE):
@@ -69,14 +68,14 @@ def authenticate():
                 input_key = f.read().strip()
             
             if input_key:
-                print("\033[1;35m[*] Đang kiểm tra Key đã lưu...\033[0m")
+                print("\033[1;35m[*] Dang kiem tra Key da luu...\033[0m")
                 is_valid, _ = check_license_curl(input_key, hwid)
                 if is_valid:
-                    print("\033[1;32m[+] Tự động xác thực bản quyền thành công!\033[0m")
+                    print("\033[1;32m[+] Tu dong xac thuc ban quyen thanh cong!\033[0m")
                     time.sleep(1)
                     return
                 else:
-                    print("\033[1;33m[!] Key đã lưu không hợp lệ, hết hạn hoặc sai HWID.\033[0m")
+                    print("\033[1;33m[!] Key luu khong hop le hoac sai HWID. Xoa key cu...\033[0m")
                     if os.path.exists(LICENSE_FILE):
                         os.remove(LICENSE_FILE)
         except Exception:
@@ -85,22 +84,22 @@ def authenticate():
     while True:
         os.system('clear')
         print("\033[1;35m==================================================\033[0m")
-        print("\033[1;37m          PAIN TOOL REJOIN VIP - XÁC THỰC         \033[0m")
+        print("\033[1;37m          PAIN TOOL REJOIN VIP - XAC THUC         \033[0m")
         print("\033[1;35m==================================================\033[0m")
-        print(f"\033[1;36m HWID hiện tại: {hwid}\033[0m")
-        print("\033[1;37m[!] Vui lòng nhập Tool Key (pain_key_...) để tiếp tục.\033[0m")
-        print("\033[1;35m(Nhập 'exit' hoặc '0' để thoát)\033[0m")
+        print(f"\033[1;36m HWID hien tai: {hwid}\033[0m")
+        print("\033[1;37m[!] Vui long nhap Tool Key (pain_key_...) de tiep tuc.\033[0m")
+        print("\033[1;35m(Nhap 'exit' hoac '0' de thoat)\033[0m")
         print("\033[1;35m==================================================\033[0m")
-        input_key = input("Nhập Key: ").strip()
+        input_key = input("Nhap Key: ").strip()
         
-        if input_key == "exit" or input_key == "0":
-            print("\033[1;31mĐã thoát chương trình. Goodbye!\033[0m")
+        if input_key in ["exit", "0"]:
+            print("\033[1;31mDa thoat chuong trinh. Goodbye!\033[0m")
             sys.exit(0)
 
         if not input_key:
             continue
 
-        print("\033[1;35m[*] Đang kết nối máy chủ để xác minh Key...\033[0m")
+        print("\033[1;35m[*] Dang ket noi may chu de xac minh Key...\033[0m")
         is_valid, response_text = check_license_curl(input_key, hwid)
 
         if is_valid:
@@ -108,19 +107,19 @@ def authenticate():
                 with open(LICENSE_FILE, "w") as f:
                     f.write(input_key)
             except Exception as write_err:
-                print(f"\033[1;33m[!] Cảnh báo: Không thể lưu Key vào bộ nhớ cục bộ ({write_err})\033[0m")
+                print(f"\033[1;33m[!] Canh bao: Khong the luu Key ({write_err})\033[0m")
 
-            print("\033[1;32m[+] Xác thực Key thành công! Đã khóa theo thiết bị.\033[0m")
+            print("\033[1;32m[+] Xac thuc Key thanh cong!\033[0m")
             time.sleep(1.5)
             break
         else:
-            print(f"\033[1;31m[!] Thất bại: Key không hợp lệ hoặc sai HWID.\033[0m")
-            print(f"\033[1;33m[*] Phản hồi từ máy chủ: {response_text}\033[0m")
+            print("\033[1;31m[!] That bai: Key khong hop le hoac sai HWID.\033[0m")
+            print(f"\033[1;33m[*] Phan hoi tu server: {response_text}\033[0m")
             time.sleep(3)
 
 def show_banner():
     os.system('clear')
-    target_display = TARGET_LINK if TARGET_LINK else "Chua dat (Rejoin thuong / Blox Fruit Lobby)"
+    target_display = TARGET_LINK if TARGET_LINK else "Chua dat (Rejoin thuong)"
     webhook_display = WEBHOOK_URL if WEBHOOK_URL else "Chua dat"
     creds_display = "Chua dat" if not ROBLOX_CREDENTIALS else "Da cau hinh (*)"
     auto_rejoin_display = "Bat" if AUTO_REJOIN == 1 else "Tat"
@@ -148,22 +147,21 @@ def show_banner():
 def send_webhook_with_image(message):
     if WEBHOOK_URL:
         try:
-            subprocess.run(["screencap", "-p", SCREENSHOT_PATH], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            run_cmd(["screencap", "-p", SCREENSHOT_PATH])
             payload_json = json.dumps({"content": message})
             
             if os.path.exists(SCREENSHOT_PATH):
-                cmd = [
+                run_cmd([
                     "curl", "-s", "-X", "POST", WEBHOOK_URL,
                     "-F", f"payload_json={payload_json}",
                     "-F", f"file=@{SCREENSHOT_PATH}"
-                ]
+                ])
             else:
-                cmd = [
+                run_cmd([
                     "curl", "-s", "-X", "POST", WEBHOOK_URL,
                     "-H", "Content-Type: application/json",
                     "-d", payload_json
-                ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                ])
         except Exception:
             pass
 
@@ -181,11 +179,8 @@ def start_tool():
     os.system('clear')
     print("\033[1;37m[+] PAIN TOOL REJOIN VIP dang chay...\033[0m")
     print("\033[1;35m[*] Nhan Ctrl+C de dung va quay lai menu.\033[0m")
-    
-    if ROBLOX_CREDENTIALS:
-        print("\033[1;37m[+] Da tai thong tin Roblox cho phien lam viec.\033[0m")
 
-    send_webhook_with_image(f"[PAIN TOOL] Bat dau theo doi Roblox. Tan suat gui anh: {WEBHOOK_INTERVAL} phut/lan.")
+    send_webhook_with_image(f"[PAIN TOOL] Bat dau theo doi Roblox. Tan suat: {WEBHOOK_INTERVAL} phut/lan.")
 
     sleep_seconds = DELAY_MINUTES * 60
     interval_seconds = WEBHOOK_INTERVAL * 60
@@ -193,36 +188,35 @@ def start_tool():
 
     try:
         while True:
-            pid_res = subprocess.run(["pidof", PACKAGE_NAME], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            pid = pid_res.stdout.decode().strip()
+            pid = run_cmd(["pidof", PACKAGE_NAME])
             
             if not pid:
                 print("\033[1;31m[-] Roblox bi dong hoac vang. Dang mo lai...\033[0m")
                 send_webhook_with_image("[PAIN TOOL] Roblox da bi dong hoac vang game! Dang mo lai:")
                 if TARGET_LINK:
-                    subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, PACKAGE_NAME])
+                    run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, PACKAGE_NAME])
                 else:
-                    subprocess.run(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
+                    run_cmd(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
                 time.sleep(10)
                 elapsed_time = 0
             else:
-                logcat_res = subprocess.run(["logcat", "-d", "-s", "Unity:V", "AndroidRuntime:E"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                log_output = logcat_res.stdout.decode()
+                # Gioi han lay 50 dong logcat cuoi cung de TRANH CRASH MEMORY
+                log_output = run_cmd(["logcat", "-d", "-t", "50", "-s", "Unity:V", "AndroidRuntime:E"])
                 
-                if any(keyword in log_output.lower() for keyword in ['disconnect', 'kicked', 'lost connection']):
+                if any(k in log_output.lower() for k in ['disconnect', 'kicked', 'lost connection']):
                     print("\033[1;33m[-] Phat hien mat ket noi. Dang vao lai game...\033[0m")
-                    send_webhook_with_image("[PAIN TOOL] Phat hien mat ket noi! Dang Rejoin game va chup man hinh:")
-                    subprocess.run(["am", "force-stop", PACKAGE_NAME])
+                    send_webhook_with_image("[PAIN TOOL] Phat hien mat ket noi! Dang Rejoin:")
+                    run_cmd(["am", "force-stop", PACKAGE_NAME])
                     time.sleep(2)
                     
                     if TARGET_LINK:
-                        subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, PACKAGE_NAME])
+                        run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, PACKAGE_NAME])
                     else:
-                        subprocess.run(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
+                        run_cmd(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
                     time.sleep(10)
                     elapsed_time = 0
             
-            subprocess.run(["logcat", "-c"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            run_cmd(["logcat", "-c"])
             
             elapsed_time += sleep_seconds
             if elapsed_time >= interval_seconds:
@@ -257,114 +251,60 @@ if __name__ == "__main__":
                 if sub_choice == "1":
                     os.system('clear')
                     print("\033[1;35m=== CAI DAT AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Bat Auto Rejoin\033[0m")
-                    print("\033[1;37m0. Tat Auto Rejoin\033[0m")
-                    toggle_val = input("Chon option [1/0]: ").strip()
+                    toggle_val = input("Chon option [1: Bat / 0: Tat]: ").strip()
                     if toggle_val in ["1", "0"]:
                         AUTO_REJOIN = int(toggle_val)
                         print("\033[1;37m[+] Cap nhat Auto Rejoin thanh cong!\033[0m")
-                    else:
-                        print("\033[1;31m[!] Lua chon khong hop le.\033[0m")
-                    time.sleep(2)
+                    time.sleep(1.5)
                 elif sub_choice == "2":
                     os.system('clear')
-                    print("\033[1;35m=== CAI DAT THOI GIAN CHO KIEM TRA (PHUT) ===\033[0m")
                     input_min = input("Nhap thoi gian cho (phut): ").strip()
                     if input_min.isdigit() and int(input_min) > 0:
                         DELAY_MINUTES = int(input_min)
-                        print(f"\033[1;37m[+] Da cap nhat thoi gian cho thanh {DELAY_MINUTES} phut!\033[0m")
-                    else:
-                        print("\033[1;31m[!] So khong hop le.\033[0m")
-                    time.sleep(2)
+                        print(f"\033[1;37m[+] Da cap nhat thoi gian cho: {DELAY_MINUTES} phut!\033[0m")
+                    time.sleep(1.5)
                 elif sub_choice == "3":
                     os.system('clear')
-                    print("\033[1;35m=== CAI DAT TAN SUAT GUI WEBHOOK (PHUT) ===\033[0m")
-                    input_interval = input("Nhap tan suat gui anh Webhook (phut): ").strip()
+                    input_interval = input("Nhap tan suat Webhook (phut): ").strip()
                     if input_interval.isdigit() and int(input_interval) > 0:
                         WEBHOOK_INTERVAL = int(input_interval)
-                        print(f"\033[1;37m[+] Da cap nhat tan suat Webhook thanh moi {WEBHOOK_INTERVAL} phut!\033[0m")
-                    else:
-                        print("\033[1;31m[!] So khong hop le.\033[0m")
-                    time.sleep(2)
+                        print(f"\033[1;37m[+] Da cap nhat tan suat Webhook: {WEBHOOK_INTERVAL} phut!\033[0m")
+                    time.sleep(1.5)
                 elif sub_choice == "4":
                     break
-                else:
-                    print("\033[1;31m[!] Lua chon khong hop le.\033[0m")
-                    time.sleep(2)
         elif choice == "3":
-            while True:
-                os.system('clear')
-                print("\033[1;35m=== CAI DAT PACKAGE NAME ===\033[0m")
-                print(f"\033[1;37mPackage hien tai: {PACKAGE_NAME}\033[0m")
-                print("\033[1;35m[1]\033[0m \033[1;37mThay doi Package name\033[0m")
-                print("\033[1;35m[2]\033[0m \033[1;37mQuay lai menu chinh\033[0m")
-                print("\033[1;35m==================================================\033[0m")
-                pkg_choice = input("Chon [1-2]: ").strip()
-                
-                if pkg_choice == "1":
-                    os.system('clear')
-                    print("\033[1;35m=== NHAP PACKAGE NAME MOI ===\033[0m")
-                    input_pkg = input("Nhap package name (Vi du: com.roblox.client): ").strip()
-                    if input_pkg:
-                        PACKAGE_NAME = input_pkg
-                        print(f"\033[1;37m[+] Da cap nhat Package name thanh: {PACKAGE_NAME}\033[0m")
-                    else:
-                        print("\033[1;31m[!] Package name khong duoc de meo.\033[0m")
-                    time.sleep(2)
-                elif pkg_choice == "2":
-                    break
-                else:
-                    print("\033[1;31m[!] Lua chon khong hop le.\033[0m")
-                    time.sleep(2)
+            os.system('clear')
+            print("\033[1;35m=== CAI DAT PACKAGE NAME ===\033[0m")
+            print(f"Package hien tai: {PACKAGE_NAME}")
+            input_pkg = input("Nhap package name mới (de trong de giu nguyen): ").strip()
+            if input_pkg:
+                PACKAGE_NAME = input_pkg
+                print(f"\033[1;37m[+] Da cap nhat Package: {PACKAGE_NAME}\033[0m")
+            time.sleep(1.5)
         elif choice == "4":
             os.system('clear')
             print("\033[1;35m=== CAI DAT ID / LINK PRIVATE ===\033[0m")
-            print("\033[1;37mMau co san: Nhap 'blox' de chon Blox Fruit\033[0m")
-            print(f"\033[1;37mTarget hien tai: {TARGET_LINK if TARGET_LINK else 'Khong co'}\033[0m\n")
-            input_link = input("Nhap Game ID / Link Server Private (de tron de xoa): ").strip()
-            
-            if input_link.lower() == "blox" or input_link.lower() == "blox fruit":
+            input_link = input("Nhap Game ID / Link Server Private: ").strip()
+            if input_link.lower() in ["blox", "blox fruit"]:
                 TARGET_LINK = "https://www.roblox.com/games/9968396843/Blox-Fruits"
-                print("\033[1;37m[+] Da tai mau Blox Fruit thanh cong!\033[0m")
             else:
                 TARGET_LINK = input_link
-                if TARGET_LINK:
-                    print("\033[1;37m[+] Da cap nhat ID/Link Private thanh cong!\033[0m")
-                else:
-                    print("\033[1;33m[-] Da xoa Target link.\033[0m")
-            time.sleep(2)
+            print("\033[1;37m[+] Da cap nhat Target link!\033[0m")
+            time.sleep(1.5)
         elif choice == "5":
             os.system('clear')
             print("\033[1;35m=== CAI DAT WEBHOOK URL ===\033[0m")
-            print(f"\033[1;37mWebhook hien tai: {WEBHOOK_URL if WEBHOOK_URL else 'Khong co'}\033[0m\n")
-            input_webhook = input("Nhap Link Discord Webhook (de tron de xoa): ").strip()
-            WEBHOOK_URL = input_webhook
-            if WEBHOOK_URL:
-                print("\033[1;37m[+] Da cap nhat Webhook URL thanh cong!\033[0m")
-            else:
-                print("\033[1;33m[-] Da xoa Webhook.\033[0m")
-            time.sleep(2)
+            WEBHOOK_URL = input("Nhap Link Discord Webhook: ").strip()
+            print("\033[1;37m[+] Da cap nhat Webhook URL!\033[0m")
+            time.sleep(1.5)
         elif choice == "6":
             os.system('clear')
             print("\033[1;35m=== DANG NHAP COOKIE ROBLOX ===\033[0m")
-            input_creds = input("Nhap thong tin (username|password|cookie): ").strip()
-            if input_creds:
-                input_custom_pkg = input("Nhap package name Roblox: ").strip()
-                if not input_custom_pkg:
-                    input_custom_pkg = "com.roblox.client"
-                ROBLOX_CREDENTIALS = input_creds
-                PACKAGE_NAME = input_custom_pkg
-                print(f"\033[1;37m[+] Dang dang nhap Roblox voi package {PACKAGE_NAME}...\033[0m")
-                subprocess.run(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
-                time.sleep(3)
-                print("\033[1;37m[+] Cau hinh va khoi chay ung dung thanh cong!\033[0m")
-            else:
-                ROBLOX_CREDENTIALS = ""
-                print("\033[1;33m[-] Da huong cau hinh dang nhap.\033[0m")
-            time.sleep(2)
+            ROBLOX_CREDENTIALS = input("Nhap thong tin cookie: ").strip()
+            if ROBLOX_CREDENTIALS:
+                run_cmd(["am", "start", "-n", f"{PACKAGE_NAME}/.MainActivity"])
+                print("\033[1;37m[+] Da khoi chay Roblox!\033[0m")
+            time.sleep(1.5)
         elif choice == "7":
             print("\033[1;31mDa thoat tool. Goodbye!\033[0m")
             sys.exit(0)
-        else:
-            print("\033[1;31m[!] Lua chon khong hop le, vui long chon tu 1 den 7.\033[0m")
-            time.sleep(2)
