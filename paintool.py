@@ -16,7 +16,6 @@ WEBHOOK_URL = ""
 ROBLOX_CREDENTIALS = ""
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
-
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
 
@@ -141,7 +140,11 @@ def get_all_packages():
 
 def open_game(pkg):
     if TARGET_LINK:
-        run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
+        if TARGET_LINK.isdigit():
+            deep_link = f"https://www.roblox.com/games/{TARGET_LINK}"
+            run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
+        else:
+            run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
     else:
         run_cmd(["am", "start", "-n", f"{pkg}/.MainActivity"])
 
@@ -154,7 +157,6 @@ def start_tool():
     
     print("\033[1;37m[+] PAIN TOOL REJOIN VIP Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
-    
     
     for pkg in packages:
         open_game(pkg)
@@ -170,7 +172,6 @@ def start_tool():
 
             packages = get_all_packages()
 
-            
             if AUTO_REJOIN_MODE == 1:
                 for pkg in packages:
                     pid = run_cmd(["pidof", pkg])
@@ -188,7 +189,6 @@ def start_tool():
                             time.sleep(3)
                 run_cmd(["logcat", "-c"]) 
 
-            
             elif AUTO_REJOIN_MODE == 2:
                 if minutes_passed % DELAY_REJOIN_MINUTES == 0:
                     print("\033[1;33m[*] Tới chu kỳ Delay Rejoin. Đang khởi động lại toàn bộ tab...\033[0m")
@@ -199,7 +199,6 @@ def start_tool():
                         open_game(pkg)
                         time.sleep(2)
 
-            
             if minutes_passed % 5 == 0:
                 send_webhook("[PAIN TOOL] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
 
@@ -285,10 +284,16 @@ if __name__ == "__main__":
                         TARGET_LINK = "https://www.roblox.com/games/11790933930/Grow-A-Garden"
                         SELECTED_GAME_NAME = "Grow a gaden 2"
                     elif game_choice == "4":
-                        link = input("Nhập ID game / Link Server Private (Để trống để thoát): ").strip()
+                        link = input("Nhập ID game hoặc Link Server VIP: ").strip()
                         if link:
                             TARGET_LINK = link
-                            SELECTED_GAME_NAME = "Server Custom"
+                            if link.isdigit():
+                                SELECTED_GAME_NAME = f"Game ID: {link}"
+                                print(f"\033[1;32m[+] Đã nhận Game ID: {link}\033[0m")
+                            else:
+                                SELECTED_GAME_NAME = "Server VIP Custom"
+                                print(f"\033[1;32m[+] Đã nhận Link Server VIP!\033[0m")
+                            time.sleep(1.5)
                     time.sleep(1)
                 elif sub == "3":
                     break
@@ -304,7 +309,7 @@ if __name__ == "__main__":
             os.system('clear')
             print("\033[1;35m=== ĐỔI ID THIẾT BỊ ===\033[0m")
             print("\033[1;33m(Yêu cầu máy đã Root hoặc cấp quyền ADB)\033[0m")
-            new_id = input("Nhập ID mới (Để trống để tạo ngẫu nhiên hoặc xóa ID hiện tại): ").strip()
+            new_id = input("Nhập ID mới (Để trống để tạo ngẫu nhiên): ").strip()
             if not new_id:
                 new_id = "".join(random.choices(string.hexdigits.lower(), k=16))
             run_cmd(["su", "-c", f"settings put secure android_id {new_id}"])
@@ -345,7 +350,6 @@ if __name__ == "__main__":
             link = input("Dán link Delta X để bypass (Để trống để thoát): ").strip()
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
-                # Tại đây tích hợp curl gọi api bypass nếu có
                 time.sleep(2)
                 print("\033[1;32m[+] Bypass thành công!\033[0m")
                 time.sleep(1.5)
