@@ -371,20 +371,32 @@ if __name__ == "__main__":
             link = input("Dán link Delta X để bypass (Để trống để thoát): ").strip()
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
-                hwid_match = link.split("?id=")[-1].split("&")[0] if "?id=" in link else link
+                
+                if "?id=" in link:
+                    hwid_match = link.split("?id=")[-1].split("&")[0]
+                elif "?d=" in link:
+                    hwid_match = link.split("?d=")[-1].split("&")[0]
+                else:
+                    hwid_match = link.strip()
                 
                 res_text = run_cmd(["curl", "-s", f"https://stickx.top/api-delta/?hwid={hwid_match}"])
                 
-                key_result = res_text if res_text else "Không nhận được phản hồi từ API"
+                key_result = ""
                 try:
                     data = json.loads(res_text)
-                    if "key" in data:
-                        key_result = data["key"]
+                    if isinstance(data, dict):
+                        key_result = data.get("key") or data.get("result") or data.get("data")
                 except:
                     pass
+                
+                if not key_result and res_text and "<html>" not in res_text:
+                    key_result = res_text
 
                 print("\033[1;32m[+] Bypass hoàn tất!\033[0m")
-                print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
+                if key_result:
+                    print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
+                else:
+                    print(f"\033[1;31m[!] Không lấy được key từ API. Phản hồi thô: {res_text}\033[0m\n")
                 
                 while True:
                     back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
