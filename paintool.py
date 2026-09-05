@@ -372,14 +372,10 @@ if __name__ == "__main__":
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
                 
-                if "?id=" in link:
-                    hwid_match = link.split("?id=")[-1].split("&")[0]
-                elif "?d=" in link:
-                    hwid_match = link.split("?d=")[-1].split("&")[0]
-                else:
-                    hwid_match = link.strip()
+                import urllib.parse
+                encoded_link = urllib.parse.quote(link, safe='')
                 
-                res_text = run_cmd(["curl", "-s", f"https://stickx.top/api-delta/?hwid={hwid_match}"])
+                res_text = run_cmd(["curl", "-s", f"https://stickx.top/api-delta/?link={encoded_link}"])
                 
                 key_result = ""
                 try:
