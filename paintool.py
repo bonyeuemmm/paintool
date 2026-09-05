@@ -79,7 +79,7 @@ def authenticate():
         input_key = input("Nhập Key: ").strip()
         
         if input_key == "exit" or input_key == "0":
-            print("\033[1;31mĐã thoát chương trình. Tạm biệt!\033[0m")
+            print("\033[1;31mĐã thoát chương trình. Goodbye!\033[0m")
             sys.exit(0)
 
         if not input_key:
@@ -186,7 +186,7 @@ def start_tool():
             
             if not pid:
                 print("\033[1;31m[-] Roblox bi dong hoac vang. Dang mo lai...\033[0m")
-                send_webhook_with_image("[PAIN TOOL] Roblox da bi dong hoac vang game! Dang mo lai va chup man hinh:")
+                send_webhook_with_image("[PAIN TOOL] Roblox da bi dong hoac vang game! Dang mo lai:")
                 if TARGET_LINK:
                     subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, PACKAGE_NAME])
                 else:
