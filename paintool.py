@@ -5,6 +5,7 @@ import subprocess
 import json
 import random
 import string
+import select
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
@@ -141,7 +142,8 @@ def get_all_packages():
 def open_game(pkg):
     if TARGET_LINK:
         if TARGET_LINK.isdigit():
-            deep_link = f"https://www.roblox.com/games/{TARGET_LINK}"
+            # Sử dụng schema deep link trực tiếp để vào thẳng game không qua giao diện web/chi tiết
+            deep_link = f"roblox://navigation/games/{TARGET_LINK}"
             run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
         else:
             run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
@@ -157,6 +159,8 @@ def start_tool():
     
     print("\033[1;37m[+] PAIN TOOL REJOIN VIP Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
+    print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter bất cứ lúc nào để ngừng Start.\033[0m")
+    print("--------------------------------------------------")
     
     for pkg in packages:
         open_game(pkg)
@@ -167,9 +171,16 @@ def start_tool():
     minutes_passed = 0
     try:
         while True:
-            time.sleep(60) 
+            
+            for _ in range(60):
+                if select.select([sys.stdin], [], [], 1)[0]:
+                    cmd_input = sys.stdin.readline().strip()
+                    if cmd_input == "0":
+                        print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
+                        time.sleep(1.5)
+                        return
+            
             minutes_passed += 1
-
             packages = get_all_packages()
 
             if AUTO_REJOIN_MODE == 1:
@@ -203,6 +214,8 @@ def start_tool():
                 send_webhook("[PAIN TOOL] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
 
     except KeyboardInterrupt:
+        print("\n\033[1;31m[!] Đã dừng Start.\033[0m")
+        time.sleep(1)
         return
 
 def show_banner():
@@ -275,13 +288,13 @@ if __name__ == "__main__":
                     game_choice = input("Chọn game [1-4]: ").strip()
                     
                     if game_choice == "1":
-                        TARGET_LINK = "https://www.roblox.com/games/9968396843/Blox-Fruits"
+                        TARGET_LINK = "9968396843"
                         SELECTED_GAME_NAME = "Blox fruit"
                     elif game_choice == "2":
-                        TARGET_LINK = "https://www.roblox.com/games/11790933930/Grow-A-Garden"
+                        TARGET_LINK = "11790933930"
                         SELECTED_GAME_NAME = "Grow a gaden"
                     elif game_choice == "3":
-                        TARGET_LINK = "https://www.roblox.com/games/11790933930/Grow-A-Garden"
+                        TARGET_LINK = "11790933930"
                         SELECTED_GAME_NAME = "Grow a gaden 2"
                     elif game_choice == "4":
                         link = input("Nhập ID game hoặc Link Server VIP: ").strip()
