@@ -142,7 +142,6 @@ def get_all_packages():
 def open_game(pkg):
     if TARGET_LINK:
         if TARGET_LINK.isdigit():
-            # Cập nhật URI Scheme trực tiếp & bổ sung cờ -W để đợi trigger Intent hoàn tất
             deep_link = f"roblox://placeId={TARGET_LINK}"
             run_cmd(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
         else:
@@ -239,7 +238,7 @@ def show_banner():
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mBypass key delta x\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
-    print("\033[1;31m[10] Exit\033[0m")
+    print("\033[1;31m[0] Exit\033[0m")
     print("\033[1;35m==================================================\033[0m")
 
 if __name__ == "__main__":
@@ -247,7 +246,7 @@ if __name__ == "__main__":
 
     while True:
         show_banner()
-        choice = input("Chọn chức năng [1-10]: ").strip()
+        choice = input("Chọn chức năng [0-9]: ").strip()
         
         if choice == "1":
             start_tool()
@@ -285,7 +284,7 @@ if __name__ == "__main__":
                     print("\033[1;37m2. Grow a gaden\033[0m")
                     print("\033[1;37m3. Grow a gaden 2\033[0m")
                     print("\033[1;37m4. ID/link private\033[0m")
-                    game_choice = input("Chọn game [1-4]: ").strip()
+                    game_choice = input("Chọn game [1-4] hoặc dán luôn ID: ").strip()
                     
                     if game_choice == "1":
                         TARGET_LINK = "9968396843"
@@ -307,6 +306,15 @@ if __name__ == "__main__":
                                 SELECTED_GAME_NAME = "Server VIP Custom"
                                 print(f"\033[1;32m[+] Đã nhận Link Server VIP!\033[0m")
                             time.sleep(1.5)
+                    elif len(game_choice) > 4: 
+                        TARGET_LINK = game_choice
+                        if game_choice.isdigit():
+                            SELECTED_GAME_NAME = f"Game ID: {game_choice}"
+                            print(f"\033[1;32m[+] Tự động nhận Game ID: {game_choice}\033[0m")
+                        else:
+                            SELECTED_GAME_NAME = "Server VIP Custom"
+                            print(f"\033[1;32m[+] Tự động nhận Link Server VIP!\033[0m")
+                        time.sleep(1.5)
                     time.sleep(1)
                 elif sub == "3":
                     break
@@ -363,9 +371,25 @@ if __name__ == "__main__":
             link = input("Dán link Delta X để bypass (Để trống để thoát): ").strip()
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
-                time.sleep(2)
-                print("\033[1;32m[+] Bypass thành công!\033[0m")
-                time.sleep(1.5)
+                hwid_match = link.split("?id=")[-1].split("&")[0] if "?id=" in link else link
+                
+                res_text = run_cmd(["curl", "-s", f"https://stickx.top/api-delta/?hwid={hwid_match}"])
+                
+                key_result = res_text if res_text else "Không nhận được phản hồi từ API"
+                try:
+                    data = json.loads(res_text)
+                    if "key" in data:
+                        key_result = data["key"]
+                except:
+                    pass
+
+                print("\033[1;32m[+] Bypass hoàn tất!\033[0m")
+                print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
+                
+                while True:
+                    back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
+                    if back == "0":
+                        break
                 
         elif choice == "9":
             os.system('clear')
@@ -378,6 +402,6 @@ if __name__ == "__main__":
             print("\033[1;32m[+] Hoàn tất!\033[0m")
             time.sleep(2)
             
-        elif choice == "10":
+        elif choice == "0":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
             sys.exit(0)
