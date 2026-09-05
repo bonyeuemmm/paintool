@@ -142,8 +142,8 @@ def get_all_packages():
 def open_game(pkg):
     if TARGET_LINK:
         if TARGET_LINK.isdigit():
-            # Sử dụng schema deep link trực tiếp để vào thẳng game không qua giao diện web/chi tiết
-            deep_link = f"roblox://navigation/games/{TARGET_LINK}"
+            # Sử dụng chuẩn giao thức sâu trực tiếp để vượt qua màn hình trang chủ / nút Play
+            deep_link = f"roblox://navigation/games/start?placeId={TARGET_LINK}"
             run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
         else:
             run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
@@ -381,3 +381,4 @@ if __name__ == "__main__":
         elif choice == "10":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
             sys.exit(0)
+            
