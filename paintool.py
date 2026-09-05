@@ -35,27 +35,35 @@ def get_hwid():
         
     return hwid
 
+def check_license_online(key, hwid):
+    try:
+        payload = {"key": key, "hwid": hwid}
+        res = requests.post(API_URL, json=payload, timeout=10)
+        if res.status_code == 200:
+            try:
+                data = res.json()
+                if isinstance(data, dict):
+                    return data.get("valid") is True or data.get("status") == "success", res.text.strip()
+            except Exception:
+                pass
+            return "valid" in res.text.lower() and "true" in res.text.lower(), res.text.strip()
+        return False, f"HTTP Error {res.status_code}"
+    except Exception as e:
+        return False, str(e)
+
 def authenticate():
     global LICENSE_FILE
     input_key = ""
     hwid = get_hwid()
 
     if os.path.exists(LICENSE_FILE):
-        with open(LICENSE_FILE, "r") as f:
-            input_key = f.read().strip()
-        
-        if input_key:
-            print("\033[1;35m[*] Đang kiểm tra Key đã lưu...\033[0m")
-            try:
-                payload = {"key": input_key, "hwid": hwid}
-                res = requests.post(API_URL, json=payload, timeout=10)
-                
-                try:
-                    data = res.json()
-                    is_valid = data.get("valid") is True or data.get("status") == "success"
-                except Exception:
-                    is_valid = '"valid":true' in res.text.replace(" ", "")
-
+        try:
+            with open(LICENSE_FILE, "r") as f:
+                input_key = f.read().strip()
+            
+            if input_key:
+                print("\033[1;35m[*] Đang kiểm tra Key đã lưu...\033[0m")
+                is_valid, _ = check_license_online(input_key, hwid)
                 if is_valid:
                     print("\033[1;32m[+] Tự động xác thực bản quyền thành công!\033[0m")
                     time.sleep(1)
@@ -64,8 +72,8 @@ def authenticate():
                     print("\033[1;33m[!] Key đã lưu không hợp lệ, hết hạn hoặc sai HWID.\033[0m")
                     if os.path.exists(LICENSE_FILE):
                         os.remove(LICENSE_FILE)
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     while True:
         os.system('clear')
@@ -86,33 +94,22 @@ def authenticate():
             continue
 
         print("\033[1;35m[*] Đang kết nối máy chủ để xác minh Key...\033[0m")
-        try:
-            payload = {"key": input_key, "hwid": hwid}
-            res = requests.post(API_URL, json=payload, timeout=10)
-            
+        is_valid, response_text = check_license_online(input_key, hwid)
+
+        if is_valid:
             try:
-                data = res.json()
-                is_valid = data.get("valid") is True or data.get("status") == "success"
-            except Exception:
-                is_valid = '"valid":true' in res.text.replace(" ", "")
+                with open(LICENSE_FILE, "w") as f:
+                    f.write(input_key)
+            except Exception as write_err:
+                print(f"\033[1;33m[!] Cảnh báo: Không thể lưu Key vào bộ nhớ cục bộ ({write_err})\033[0m")
 
-            if is_valid:
-                try:
-                    with open(LICENSE_FILE, "w") as f:
-                        f.write(input_key)
-                except Exception as write_err:
-                    print(f"\033[1;33m[!] Cảnh báo: Không thể lưu Key vào bộ nhớ cục bộ ({write_err})\033[0m")
-
-                print("\033[1;32m[+] Xác thực Key thành công! Đã khóa theo thiết bị.\033[0m")
-                time.sleep(1.5)
-                break
-            else:
-                print(f"\033[1;31m[!] Thất bại: Key không hợp lệ hoặc sai HWID.\033[0m")
-                print(f"\033[1;33m[*] Phản hồi từ máy chủ: {res.text.strip()}\033[0m")
-                time.sleep(3)
-        except Exception as e:
-            print(f"\033[1;31m[!] Lỗi kết nối: {e}\033[0m")
-            time.sleep(2)
+            print("\033[1;32m[+] Xác thực Key thành công! Đã khóa theo thiết bị.\033[0m")
+            time.sleep(1.5)
+            break
+        else:
+            print(f"\033[1;31m[!] Thất bại: Key không hợp lệ hoặc sai HWID.\033[0m")
+            print(f"\033[1;33m[*] Phản hồi từ máy chủ: {response_text}\033[0m")
+            time.sleep(3)
 
 def show_banner():
     os.system('clear')
