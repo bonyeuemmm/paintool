@@ -6,6 +6,7 @@ import json
 import random
 import string
 import select
+import urllib.parse
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
@@ -22,7 +23,7 @@ DELAY_REJOIN_MINUTES = 1
 
 def run_cmd(cmd_list):
     try:
-        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=10)
+        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15)
         return res.stdout.strip()
     except Exception:
         return ""
@@ -372,27 +373,46 @@ if __name__ == "__main__":
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
                 
-                import urllib.parse
+                token = link
+                if "d=" in link:
+                    token = link.split("d=")[-1].split("&")[0]
+                elif "id=" in link:
+                    token = link.split("id=")[-1].split("&")[0]
+                    
                 encoded_link = urllib.parse.quote(link, safe='')
                 
-                res_text = run_cmd(["curl", "-s", f"https://stickx.top/api-delta/?link={encoded_link}"])
+                api_endpoints = [
+                    f"https://stickx.top/api-delta/?hwid={token}",
+                    f"https://stickx.top/api-delta/?link={encoded_link}"
+                ]
                 
                 key_result = ""
-                try:
-                    data = json.loads(res_text)
-                    if isinstance(data, dict):
-                        key_result = data.get("key") or data.get("result") or data.get("data")
-                except:
-                    pass
+                res_text = ""
                 
-                if not key_result and res_text and "<html>" not in res_text:
-                    key_result = res_text
+                for api in api_endpoints:
+                    res_text = run_cmd([
+                        "curl", "-s", "-X", "GET", api,
+                        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                        "--connect-timeout", "10"
+                    ])
+                    
+                    try:
+                        data = json.loads(res_text)
+                        if isinstance(data, dict):
+                            key_result = data.get("key") or data.get("result") or data.get("data")
+                            if key_result: 
+                                break
+                    except:
+                        if res_text and "key" not in res_text.lower() and "<html>" not in res_text.lower() and len(res_text) < 100:
+                            key_result = res_text
+                            break
 
                 print("\033[1;32m[+] Bypass hoàn tất!\033[0m")
                 if key_result:
                     print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
                 else:
-                    print(f"\033[1;31m[!] Không lấy được key từ API. Phản hồi thô: {res_text}\033[0m\n")
+                    print(f"\033[1;31m[!] Không lấy được key từ API. Có thể API đang bảo trì hoặc link không hợp lệ.\033[0m")
+                    print(f"\033[1;31m[-] Phản hồi thô: {res_text[:100]}...\033[0m\n")
                 
                 while True:
                     back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
