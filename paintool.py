@@ -371,7 +371,7 @@ if __name__ == "__main__":
             print("\033[1;35m=== BYPASS KEY DELTA X ===\033[0m")
             link = input("Dán link Delta X để bypass (Để trống để thoát): ").strip()
             if link:
-                print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API công cộng mới...\033[0m")
+                print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API gốc Delta...\033[0m")
                 
                 parsed_url = urllib.parse.urlparse(link)
                 query_params = urllib.parse.parse_qs(parsed_url.query)
@@ -389,11 +389,11 @@ if __name__ == "__main__":
                 encoded_link = urllib.parse.quote(link, safe='')
                 
                 api_endpoints = [
-                    f"https://api.bypass.bot.nu/api/bypass?url={encoded_link}",
-                    f"https://api.keyrblx.com/api/v1/bypass?link={encoded_link}",
-                    f"https://bypass.kimania.xyz/api/bypass?link={encoded_link}",
-                    f"https://api.luarmor.net/v3/bypass?url={encoded_link}",
-                    f"https://api.delta-enexploit.net/bypass?hwid={encoded_hwid}"
+                    f"https://api.platoboost.com/public/v1/bypass?url={encoded_link}",
+                    f"https://api.delta-enexploit.net/public/bypass?hwid={encoded_hwid}",
+                    f"https://bypass.donat-api.workers.dev/delta?link={encoded_link}",
+                    f"https://api.keyrblx.com/public/delta?link={encoded_link}",
+                    f"https://api.bypass.vip/public/delta?link={encoded_link}"
                 ]
                 
                 key_result = ""
@@ -402,10 +402,11 @@ if __name__ == "__main__":
                 for api in api_endpoints:
                     res_text = run_cmd([
                         "curl", "-s", "-L", "-X", "GET", api,
-                        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                        "-H", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
                         "-H", "Accept: application/json, text/plain, */*",
+                        "-H", "Origin: https://gateway.platoboost.com",
                         "-H", "Referer: https://gateway.platoboost.com/",
-                        "--connect-timeout", "10"
+                        "--connect-timeout", "15"
                     ])
                     
                     if not res_text or "<html>" in res_text.lower():
@@ -422,7 +423,7 @@ if __name__ == "__main__":
                                 data.get("keyz") or
                                 data.get("message")
                             )
-                            if key_result and "http" not in str(key_result) and len(str(key_result)) < 100:
+                            if key_result and "http" not in str(key_result) and len(str(key_result)) < 120:
                                 break
                             else:
                                 key_result = ""
@@ -435,13 +436,12 @@ if __name__ == "__main__":
                 if key_result:
                     print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
                 else:
-                    print(f"\033[1;31m[!] Tất cả API hiện tại đều đã phản hồi lỗi hoặc bị chặn.\033[0m")
+                    print(f"\033[1;31m[!] Các API công cộng hiện tại đã bị Cloudflare chặn hoặc thay đổi cấu trúc.\033[0m")
                     print(f"\033[1;31m[-] Phản hồi gần nhất: {res_text[:150]}\033[0m\n")
                 
                 while True:
                     back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
                     if back == "0":
-                    
                         break
                 
         elif choice == "9":
