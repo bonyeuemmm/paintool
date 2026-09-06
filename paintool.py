@@ -373,17 +373,12 @@ if __name__ == "__main__":
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
                 
-                token = link
-                if "d=" in link:
-                    token = link.split("d=")[-1].split("&")[0]
-                elif "id=" in link:
-                    token = link.split("id=")[-1].split("&")[0]
-                    
                 encoded_link = urllib.parse.quote(link, safe='')
                 
                 api_endpoints = [
-                    f"https://stickx.top/api-delta/?hwid={token}",
-                    f"https://stickx.top/api-delta/?link={encoded_link}"
+                    f"https://api.bypass.vip/bypass?link={encoded_link}",
+                    f"https://bypass.vip/api/bypass?link={encoded_link}",
+                    f"https://api.bypass.city/v1/roblox?link={encoded_link}"
                 ]
                 
                 key_result = ""
@@ -391,19 +386,21 @@ if __name__ == "__main__":
                 
                 for api in api_endpoints:
                     res_text = run_cmd([
-                        "curl", "-s", "-X", "GET", api,
-                        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                        "--connect-timeout", "10"
+                        "curl", "-s", "-L", "-X", "GET", api,
+                        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "-H", "Accept: application/json, text/plain, */*",
+                        "-H", "Accept-Language: en-US,en;q=0.9",
+                        "--connect-timeout", "15"
                     ])
                     
                     try:
                         data = json.loads(res_text)
                         if isinstance(data, dict):
-                            key_result = data.get("key") or data.get("result") or data.get("data")
+                            key_result = data.get("key") or data.get("result") or data.get("bypassed") or data.get("data")
                             if key_result: 
                                 break
                     except:
-                        if res_text and "key" not in res_text.lower() and "<html>" not in res_text.lower() and len(res_text) < 100:
+                        if res_text and "key" not in res_text.lower() and "<html>" not in res_text.lower() and len(res_text) < 150:
                             key_result = res_text
                             break
 
@@ -412,7 +409,7 @@ if __name__ == "__main__":
                     print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
                 else:
                     print(f"\033[1;31m[!] Không lấy được key từ API. Có thể API đang bảo trì hoặc link không hợp lệ.\033[0m")
-                    print(f"\033[1;31m[-] Phản hồi thô: {res_text[:100]}...\033[0m\n")
+                    print(f"\033[1;31m[-] Phản hồi thô: {res_text[:150]}\033[0m\n")
                 
                 while True:
                     back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
