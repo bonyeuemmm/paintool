@@ -395,7 +395,7 @@ if __name__ == "__main__":
                 open_game(pkg)
                 time.sleep(1.5)
             print("\033[1;32m[+] Hoàn tất!\033[0m")
-                time.sleep(2)
+            time.sleep(2)
             
         elif choice == "0":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
