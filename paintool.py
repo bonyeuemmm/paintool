@@ -21,6 +21,10 @@ SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
 
+def clear_screen():
+    os.system('stty sane 2>/dev/null')
+    os.system('clear')
+
 def run_cmd(cmd_list):
     try:
         res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15)
@@ -82,7 +86,7 @@ def authenticate():
             pass
 
     while True:
-        os.system('clear')
+        clear_screen()
         print("\033[1;35m==================================================\033[0m")
         print("\033[1;37m          PAIN TOOL REJOIN VIP - XÁC THỰC         \033[0m")
         print("\033[1;35m==================================================\033[0m")
@@ -137,7 +141,9 @@ def get_all_packages():
     packages = []
     for line in output.splitlines():
         if PACKAGE_PREFIX in line:
-            packages.append(line.split(":")[1].strip())
+            parts = line.split(":")
+            if len(parts) > 1:
+                packages.append(parts[1].strip())
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
@@ -154,7 +160,7 @@ def close_game(pkg):
     run_cmd(["am", "force-stop", pkg])
 
 def start_tool():
-    os.system('clear')
+    clear_screen()
     packages = get_all_packages()
     
     print("\033[1;37m[+] PAIN TOOL REJOIN VIP Đang chạy...\033[0m")
@@ -219,8 +225,8 @@ def start_tool():
         return
 
 def show_banner():
-    os.system('clear')
-    rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+    clear_screen()
+    rejoin_mode_str = "Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;37m             PAIN TOOL REJOIN VIP                 \033[0m")
@@ -238,7 +244,7 @@ def show_banner():
     print("\033[1;35m[6]\033[0m \033[1;37mLogin cookie roblox\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
-    print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
+    print("\033[1;35m[9]\033[0m \033[1;37mMở all tab clone\033[0m")
     print("\033[1;31m[0] Exit\033[0m")
     print("\033[1;35m==================================================\033[0m")
 
@@ -254,7 +260,7 @@ if __name__ == "__main__":
             
         elif choice == "2":
             while True:
-                os.system('clear')
+                clear_screen()
                 print("\033[1;35m=== SET UP ===\033[0m")
                 print("\033[1;37m1. Set up auto rejoin\033[0m")
                 print("\033[1;37m2. Chọn game\033[0m")
@@ -262,10 +268,10 @@ if __name__ == "__main__":
                 sub = input("Chọn: ").strip()
                 
                 if sub == "1":
-                    os.system('clear')
+                    clear_screen()
                     print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Auto rejoin khi bị kick/văng (Thông minh)\033[0m")
-                    print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
+                    print("\033[1;37m1. Auto rejoin khi bị kick/văng\033[0m")
+                    print("\033[1;37m2. Delay rejoin (delay vào lại thời gian đã nhập)\033[0m")
                     mode = input("Chọn cơ chế [1/2]: ").strip()
                     if mode == "1":
                         AUTO_REJOIN_MODE = 1
@@ -279,13 +285,13 @@ if __name__ == "__main__":
                     time.sleep(1.5)
                     
                 elif sub == "2":
-                    os.system('clear')
+                    clear_screen()
                     print("\033[1;35m=== CHỌN GAME ===\033[0m")
                     print("\033[1;37m1. Blox fruit\033[0m")
                     print("\033[1;37m2. Grow a gaden\033[0m")
                     print("\033[1;37m3. Grow a gaden 2\033[0m")
                     print("\033[1;37m4. ID/link private\033[0m")
-                    game_choice = input("Chọn game [1-4] hoặc dán luôn ID: ").strip()
+                    game_choice = input("Chọn game [1-4]: ").strip()
                     
                     if game_choice == "1":
                         TARGET_LINK = "9968396843"
@@ -321,14 +327,14 @@ if __name__ == "__main__":
                     break
                     
         elif choice == "3":
-            os.system('clear')
+            clear_screen()
             print("\033[1;35m=== CÀI ĐẶT PACKAGE PREFIX ===\033[0m")
             pref = input("Nhập Package Prefix (Để trống để giữ mặc định): ").strip()
             if pref:
                 PACKAGE_PREFIX = pref
             
         elif choice == "4":
-            os.system('clear')
+            clear_screen()
             print("\033[1;35m=== ĐỔI ID THIẾT BỊ ===\033[0m")
             print("\033[1;33m(Yêu cầu máy đã Root hoặc cấp quyền ADB)\033[0m")
             new_id = input("Nhập ID mới (Để trống để tạo ngẫu nhiên): ").strip()
@@ -339,7 +345,7 @@ if __name__ == "__main__":
             time.sleep(2)
             
         elif choice == "5":
-            os.system('clear')
+            clear_screen()
             print("\033[1;35m=== CÀI ĐẶT WEBHOOK URL ===\033[0m")
             url = input("Nhập Link Link Discord Webhook (Để trống để xóa): ").strip()
             WEBHOOK_URL = url
@@ -349,7 +355,7 @@ if __name__ == "__main__":
             time.sleep(1.5)
             
         elif choice == "6":
-            os.system('clear')
+            clear_screen()
             print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX ===\033[0m")
             ROBLOX_CREDENTIALS = input("Nhập thông tin (user name|mật khẩu|cookie) (Để trống để thoát): ").strip()
             if not ROBLOX_CREDENTIALS:
@@ -369,7 +375,7 @@ if __name__ == "__main__":
             time.sleep(1.5)
             
         elif choice == "7":
-            os.system('clear')
+            clear_screen()
             print("\033[1;35m=== XÓA CACHE TẤT CẢ GAME ===\033[0m")
             packages = get_all_packages()
             for pkg in packages:
@@ -379,13 +385,12 @@ if __name__ == "__main__":
             time.sleep(2)
             
         elif choice == "8":
-            os.system('clear')
+            clear_screen()
             print("\033[1;35m=== IMPORT AUTO EXECUTE ===\033[0m")
             script_data = input("Nhập script hack (Để trống để thoát): ").strip()
             if not script_data:
                 continue
                 
-            packages = get_all_packages()
             temp_path = "/sdcard/temp_autoexec.lua"
             try:
                 with open(temp_path, "w", encoding="utf-8") as f:
@@ -393,34 +398,72 @@ if __name__ == "__main__":
             except Exception:
                 run_cmd(["su", "-c", f"echo '{script_data}' > {temp_path}"])
 
+            executor_names = ["Delta", "Codex", "Arceus", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
+            autoexec_subdirs = ["autoexec", "Autoexec", "auto-execute", "AutoExecute", "scripts", "Scripts"]
+            
+            target_dirs = set()
+
+            for name in executor_names:
+                base_dir = f"/sdcard/{name}"
+                if os.path.exists(base_dir) or run_cmd(["su", "-c", f"test -d {base_dir} && echo 1"]) == "1":
+                    found_sub = False
+                    for sub in autoexec_subdirs:
+                        sub_path = f"{base_dir}/{sub}"
+                        if os.path.exists(sub_path) or run_cmd(["su", "-c", f"test -d {sub_path} && echo 1"]) == "1":
+                            target_dirs.add(sub_path)
+                            found_sub = True
+                    if not found_sub:
+                        target_dirs.add(f"{base_dir}/Autoexec")
+
+            packages = get_all_packages()
             for pkg in packages:
-                ext_dir = f"/sdcard/Android/data/{pkg}/files/autoexec"
-                run_cmd(["mkdir", "-p", ext_dir])
-                run_cmd(["cp", temp_path, f"{ext_dir}/script.lua"])
+                target_dirs.add(f"/sdcard/Android/data/{pkg}/files/autoexec")
+                target_dirs.add(f"/sdcard/Android/data/{pkg}/files/Autoexec")
+                target_dirs.add(f"/data/data/{pkg}/autoexec")
+                target_dirs.add(f"/data/data/{pkg}/Autoexec")
+
+            print(f"[*] Đang ghi file script vào {len(target_dirs)} vị trí Autoexec...")
+            for target in target_dirs:
+                run_cmd(["mkdir", "-p", target])
+                run_cmd(["su", "-c", f"mkdir -p {target}"])
                 
-                int_dir = f"/data/data/{pkg}/autoexec"
-                run_cmd(["su", "-c", f"mkdir -p {int_dir}"])
-                run_cmd(["su", "-c", f"cp {temp_path} {int_dir}/script.lua"])
-                
+                run_cmd(["cp", temp_path, f"{target}/script.lua"])
+                run_cmd(["su", "-c", f"cp {temp_path} {target}/script.lua"])
+
             try:
                 os.remove(temp_path)
             except:
                 run_cmd(["rm", temp_path])
                 
-            print("\033[1;32m[+] Đã tạo file script.lua và lưu vào mục auto execute.\033[0m")
-            time.sleep(2)
+            print("\033[1;32m[+] Đã quét và lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
+            time.sleep(2.5)
                 
         elif choice == "9":
-            os.system('clear')
-            packages = get_all_packages()
-            print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ({len(packages)} ỨNG DỤNG) ===\033[0m")
-            for pkg in packages:
+            clear_screen()
+            print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
+            print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
+            
+            output = run_cmd(["pm", "list", "packages"])
+            found_pkgs = []
+            for line in output.splitlines():
+                if PACKAGE_PREFIX in line:
+                    parts = line.split(":")
+                    if len(parts) > 1:
+                        found_pkgs.append(parts[1].strip())
+            
+            if not found_pkgs:
+                print(f"\033[1;31m[-] Không tìm thấy ứng dụng nào chứa prefix: {PACKAGE_PREFIX}\033[0m")
+                print(f"\033[1;33m[*] Thử mở gói mặc định: {PACKAGE_PREFIX}\033[0m")
+                found_pkgs = [PACKAGE_PREFIX]
+            else:
+                print(f"\033[1;32m[+] Tìm thấy {len(found_pkgs)} ứng dụng!\033[0m")
+                
+            for pkg in found_pkgs:
                 print(f"[*] Đang mở: {pkg}")
                 open_game(pkg)
                 time.sleep(1.5)
-            print("\033[1;32m[+] Hoàn tất!\033[0m")
+            print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
             time.sleep(2)
             
         elif choice == "0":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
-            sys.exit(0)
