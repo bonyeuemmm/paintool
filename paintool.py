@@ -371,15 +371,15 @@ if __name__ == "__main__":
             print("\033[1;35m=== BYPASS KEY DELTA X ===\033[0m")
             link = input("Dán link Delta X để bypass (Để trống để thoát): ").strip()
             if link:
-                print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
+                print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API công cộng mới...\033[0m")
                 
                 parsed_url = urllib.parse.urlparse(link)
                 query_params = urllib.parse.parse_qs(parsed_url.query)
-                hwid_val = query_params.get("hwid", [""])[0]
+                hwid_val = query_params.get("hwid", [""])[0] or query_params.get("token", [""])[0] or query_params.get("id", [""])[0]
                 
                 if not hwid_val:
-                    path_parts = parsed_url.path.strip("/").split("/")
-                    if len(path_parts) > 0:
+                    path_parts = [p for p in parsed_url.path.strip("/").split("/") if p]
+                    if path_parts:
                         hwid_val = path_parts[-1]
                 
                 if not hwid_val:
@@ -389,11 +389,11 @@ if __name__ == "__main__":
                 encoded_link = urllib.parse.quote(link, safe='')
                 
                 api_endpoints = [
-                    f"https://api.delta-enexploit.net/bypass?hwid={encoded_hwid}",
-                    f"https://delta-api.arkforge.net/api/v1/bypass?hwid={encoded_hwid}",
+                    f"https://api.bypass.bot.nu/api/bypass?url={encoded_link}",
+                    f"https://api.keyrblx.com/api/v1/bypass?link={encoded_link}",
+                    f"https://bypass.kimania.xyz/api/bypass?link={encoded_link}",
                     f"https://api.luarmor.net/v3/bypass?url={encoded_link}",
-                    f"https://api.keyrblx.com/v1/delta?link={encoded_link}",
-                    f"https://bypass.bot.nu/api/delta?hwid={encoded_hwid}"
+                    f"https://api.delta-enexploit.net/bypass?hwid={encoded_hwid}"
                 ]
                 
                 key_result = ""
@@ -402,21 +402,32 @@ if __name__ == "__main__":
                 for api in api_endpoints:
                     res_text = run_cmd([
                         "curl", "-s", "-L", "-X", "GET", api,
-                        "-H", "User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                         "-H", "Accept: application/json, text/plain, */*",
-                        "-H", "Accept-Language: en-US,en;q=0.9",
                         "-H", "Referer: https://gateway.platoboost.com/",
-                        "--connect-timeout", "15"
+                        "--connect-timeout", "10"
                     ])
                     
+                    if not res_text or "<html>" in res_text.lower():
+                        continue
+                        
                     try:
                         data = json.loads(res_text)
                         if isinstance(data, dict):
-                            key_result = data.get("key") or data.get("result") or data.get("bypassed") or data.get("data") or data.get("keyz")
-                            if key_result: 
+                            key_result = (
+                                data.get("key") or 
+                                data.get("result") or 
+                                data.get("bypassed") or 
+                                data.get("data") or 
+                                data.get("keyz") or
+                                data.get("message")
+                            )
+                            if key_result and "http" not in str(key_result) and len(str(key_result)) < 100:
                                 break
+                            else:
+                                key_result = ""
                     except:
-                        if res_text and "key" not in res_text.lower() and "<html>" not in res_text.lower() and len(res_text) < 150:
+                        if res_text and len(res_text) < 150 and "error" not in res_text.lower():
                             key_result = res_text
                             break
 
@@ -424,12 +435,13 @@ if __name__ == "__main__":
                 if key_result:
                     print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
                 else:
-                    print(f"\033[1;31m[!] Không lấy được key từ API. Có thể API đang bảo trì hoặc link không hợp lệ.\033[0m")
-                    print(f"\033[1;31m[-] Phản hồi thô: {res_text[:150]}\033[0m\n")
+                    print(f"\033[1;31m[!] Tất cả API hiện tại đều đã phản hồi lỗi hoặc bị chặn.\033[0m")
+                    print(f"\033[1;31m[-] Phản hồi gần nhất: {res_text[:150]}\033[0m\n")
                 
                 while True:
                     back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
                     if back == "0":
+                    
                         break
                 
         elif choice == "9":
