@@ -341,7 +341,7 @@ if __name__ == "__main__":
         elif choice == "5":
             os.system('clear')
             print("\033[1;35m=== CÀI ĐẶT WEBHOOK URL ===\033[0m")
-            url = input("Nhập Link Discord Webhook (Để trống để xóa): ").strip()
+            url = input("Nhập Link Link Discord Webhook (Để trống để xóa): ").strip()
             WEBHOOK_URL = url
             if WEBHOOK_URL:
                 print("\033[1;32m[+] Đã lưu! Đang gửi tin nhắn test...\033[0m")
@@ -354,7 +354,7 @@ if __name__ == "__main__":
             ROBLOX_CREDENTIALS = input("Nhập thông tin cookie: ").strip()
             if ROBLOX_CREDENTIALS:
                 print("\033[1;32m[+] Đã ghi nhận Cookie!\033[0m")
-            time.sleep(1.5)
+                time.sleep(1.5)
             
         elif choice == "7":
             os.system('clear')
@@ -369,80 +369,22 @@ if __name__ == "__main__":
         elif choice == "8":
             os.system('clear')
             print("\033[1;35m=== BYPASS KEY DELTA X ===\033[0m")
-            link = input("Dán link Delta X để bypass (Để trống để thoát): ").strip()
+            print("\033[1;33m[!] Lưu ý: Các API bypass bên thứ 3 hiện tại đã bị Cloudflare/Platoboost chặn (Lỗi 404/Block).\033[0m")
+            print("\033[1;37mCách tốt nhất để lấy Key Delta X là mở link trực tiếp qua trình duyệt để vượt qua hệ thống bảo mật.\033[0m")
+            link = input("Dán link Delta X hoặc bấm Enter để mở trình duyệt chính: ").strip()
+            
             if link:
-                print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API gốc Delta...\033[0m")
+                print("\033[1;32m[+] Đang mở link vượt key qua trình duyệt hệ thống...\033[0m")
+                run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", link])
+            else:
+                print("\033[1;32m[+] Mở trang chủ Delta Gateway...\033[0m")
+                run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", "https://gateway.platoboost.com/a/8" ])
                 
-                parsed_url = urllib.parse.urlparse(link)
-                query_params = urllib.parse.parse_qs(parsed_url.query)
-                hwid_val = query_params.get("hwid", [""])[0] or query_params.get("token", [""])[0] or query_params.get("id", [""])[0]
-                
-                if not hwid_val:
-                    path_parts = [p for p in parsed_url.path.strip("/").split("/") if p]
-                    if path_parts:
-                        hwid_val = path_parts[-1]
-                
-                if not hwid_val:
-                    hwid_val = link.strip()
-
-                encoded_hwid = urllib.parse.quote(hwid_val, safe='')
-                encoded_link = urllib.parse.quote(link, safe='')
-                
-                api_endpoints = [
-                    f"https://api.platoboost.com/public/v1/bypass?url={encoded_link}",
-                    f"https://api.delta-enexploit.net/public/bypass?hwid={encoded_hwid}",
-                    f"https://bypass.donat-api.workers.dev/delta?link={encoded_link}",
-                    f"https://api.keyrblx.com/public/delta?link={encoded_link}",
-                    f"https://api.bypass.vip/public/delta?link={encoded_link}"
-                ]
-                
-                key_result = ""
-                res_text = ""
-                
-                for api in api_endpoints:
-                    res_text = run_cmd([
-                        "curl", "-s", "-L", "-X", "GET", api,
-                        "-H", "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
-                        "-H", "Accept: application/json, text/plain, */*",
-                        "-H", "Origin: https://gateway.platoboost.com",
-                        "-H", "Referer: https://gateway.platoboost.com/",
-                        "--connect-timeout", "15"
-                    ])
-                    
-                    if not res_text or "<html>" in res_text.lower():
-                        continue
-                        
-                    try:
-                        data = json.loads(res_text)
-                        if isinstance(data, dict):
-                            key_result = (
-                                data.get("key") or 
-                                data.get("result") or 
-                                data.get("bypassed") or 
-                                data.get("data") or 
-                                data.get("keyz") or
-                                data.get("message")
-                            )
-                            if key_result and "http" not in str(key_result) and len(str(key_result)) < 120:
-                                break
-                            else:
-                                key_result = ""
-                    except:
-                        if res_text and len(res_text) < 150 and "error" not in res_text.lower():
-                            key_result = res_text
-                            break
-
-                print("\033[1;32m[+] Bypass hoàn tất!\033[0m")
-                if key_result:
-                    print(f"\033[1;37m[KEY CỦA BẠN]: \033[1;32m{key_result}\033[0m\n")
-                else:
-                    print(f"\033[1;31m[!] Các API công cộng hiện tại đã bị Cloudflare chặn hoặc thay đổi cấu trúc.\033[0m")
-                    print(f"\033[1;31m[-] Phản hồi gần nhất: {res_text[:150]}\033[0m\n")
-                
-                while True:
-                    back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
-                    if back == "0":
-                        break
+            print("\n\033[1;32m[+] Hãy hoàn thành vượt link trực tiếp trên trình duyệt để lấy Key!\033[0m")
+            while True:
+                back = input("\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
+                if back == "0":
+                    break
                 
         elif choice == "9":
             os.system('clear')
@@ -453,7 +395,7 @@ if __name__ == "__main__":
                 open_game(pkg)
                 time.sleep(1.5)
             print("\033[1;32m[+] Hoàn tất!\033[0m")
-            time.sleep(2)
+                time.sleep(2)
             
         elif choice == "0":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
