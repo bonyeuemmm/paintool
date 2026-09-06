@@ -373,12 +373,27 @@ if __name__ == "__main__":
             if link:
                 print("\033[1;33m[*] Đang tiến hành xử lý bypass qua API...\033[0m")
                 
+                parsed_url = urllib.parse.urlparse(link)
+                query_params = urllib.parse.parse_qs(parsed_url.query)
+                hwid_val = query_params.get("hwid", [""])[0]
+                
+                if not hwid_val:
+                    path_parts = parsed_url.path.strip("/").split("/")
+                    if len(path_parts) > 0:
+                        hwid_val = path_parts[-1]
+                
+                if not hwid_val:
+                    hwid_val = link.strip()
+
+                encoded_hwid = urllib.parse.quote(hwid_val, safe='')
                 encoded_link = urllib.parse.quote(link, safe='')
                 
                 api_endpoints = [
-                    f"https://api.bypass.vip/bypass?link={encoded_link}",
-                    f"https://bypass.vip/api/bypass?link={encoded_link}",
-                    f"https://api.bypass.city/v1/roblox?link={encoded_link}"
+                    f"https://api.delta-enexploit.net/bypass?hwid={encoded_hwid}",
+                    f"https://delta-api.arkforge.net/api/v1/bypass?hwid={encoded_hwid}",
+                    f"https://api.luarmor.net/v3/bypass?url={encoded_link}",
+                    f"https://api.keyrblx.com/v1/delta?link={encoded_link}",
+                    f"https://bypass.bot.nu/api/delta?hwid={encoded_hwid}"
                 ]
                 
                 key_result = ""
@@ -387,16 +402,17 @@ if __name__ == "__main__":
                 for api in api_endpoints:
                     res_text = run_cmd([
                         "curl", "-s", "-L", "-X", "GET", api,
-                        "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "-H", "User-Agent: Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
                         "-H", "Accept: application/json, text/plain, */*",
                         "-H", "Accept-Language: en-US,en;q=0.9",
+                        "-H", "Referer: https://gateway.platoboost.com/",
                         "--connect-timeout", "15"
                     ])
                     
                     try:
                         data = json.loads(res_text)
                         if isinstance(data, dict):
-                            key_result = data.get("key") or data.get("result") or data.get("bypassed") or data.get("data")
+                            key_result = data.get("key") or data.get("result") or data.get("bypassed") or data.get("data") or data.get("keyz")
                             if key_result: 
                                 break
                     except:
