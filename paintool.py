@@ -237,7 +237,7 @@ def show_banner():
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
     print("\033[1;35m[6]\033[0m \033[1;37mLogin cookie roblox\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
-    print("\033[1;35m[8]\033[0m \033[1;37mBypass key delta x\033[0m")
+    print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
     print("\033[1;31m[0] Exit\033[0m")
     print("\033[1;35m==================================================\033[0m")
@@ -351,10 +351,22 @@ if __name__ == "__main__":
         elif choice == "6":
             os.system('clear')
             print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX ===\033[0m")
-            ROBLOX_CREDENTIALS = input("Nhập thông tin cookie: ").strip()
-            if ROBLOX_CREDENTIALS:
-                print("\033[1;32m[+] Đã ghi nhận Cookie!\033[0m")
-                time.sleep(1.5)
+            ROBLOX_CREDENTIALS = input("Nhập thông tin (user name|mật khẩu|cookie) (Để trống để thoát): ").strip()
+            if not ROBLOX_CREDENTIALS:
+                continue
+                
+            target_pkg = input("Nhập package name để đăng nhập (Để trống để thoát): ").strip()
+            if not target_pkg:
+                continue
+
+            try:
+                cookie_val = ROBLOX_CREDENTIALS.split("|")[2] if "|" in ROBLOX_CREDENTIALS else ROBLOX_CREDENTIALS
+                prefs_path = f"/data/data/{target_pkg}/shared_prefs/com.roblox.robloxmobile.xml"
+                run_cmd(["su", "-c", f"sed -i 's/<string name=\"ROBLOSECURITY\">.*<\\/string>/<string name=\"ROBLOSECURITY\">{cookie_val}<\\/string>/' {prefs_path}"])
+                print(f"\033[1;32m[+] Đã thiết lập cookie cho {target_pkg} thành công!\033[0m")
+            except Exception as e:
+                print(f"\033[1;31m[-] Lỗi trong quá trình tiêm cookie: {str(e)}\033[0m")
+            time.sleep(1.5)
             
         elif choice == "7":
             os.system('clear')
@@ -368,58 +380,35 @@ if __name__ == "__main__":
             
         elif choice == "8":
             os.system('clear')
-            print("\033[1;35m=== BYPASS KEY DELTA X TỰ ĐỘNG (MULTI-SERVER) ===\033[0m")
-            link = input("Dán link Delta X (Platoboost / Gateway): ").strip()
-            
-            if link:
-                encoded_link = urllib.parse.quote(link)
+            print("\033[1;35m=== IMPORT AUTO EXECUTE ===\033[0m")
+            script_data = input("Nhập script hack (Để trống để thoát): ").strip()
+            if not script_data:
+                continue
                 
-                api_list = [
-                    f"https://api.gateway.lol/v1/bypass?url={encoded_link}",
-                    f"https://dlr-api.vercel.app/api/bypass?url={encoded_link}",
-                    f"https://ethos-api.vercel.app/bypass?url={encoded_link}",
-                    f"https://api.fluxteam.net/bypass?url={encoded_link}"
-                ]
+            packages = get_all_packages()
+            temp_path = "/sdcard/temp_autoexec.lua"
+            try:
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    f.write(script_data)
+            except Exception:
+                run_cmd(["su", "-c", f"echo '{script_data}' > {temp_path}"])
+
+            for pkg in packages:
+                ext_dir = f"/sdcard/Android/data/{pkg}/files/autoexec"
+                run_cmd(["mkdir", "-p", ext_dir])
+                run_cmd(["cp", temp_path, f"{ext_dir}/script.lua"])
                 
-                key_result = ""
-                headers = [
-                    "-H", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-                    "-H", "Accept: application/json, text/plain, */*",
-                    "-H", "Accept-Language: en-US,en;q=0.9",
-                    "-H", "Sec-Ch-Ua: \"Not;A=Brand\";v=\"24\", \"Chromium\";v=\"128\"",
-                    "-H", "Sec-Ch-Ua-Mobile: ?0",
-                    "-H", "Sec-Ch-Ua-Platform: \"Windows\""
-                ]
+                int_dir = f"/data/data/{pkg}/autoexec"
+                run_cmd(["su", "-c", f"mkdir -p {int_dir}"])
+                run_cmd(["su", "-c", f"cp {temp_path} {int_dir}/script.lua"])
                 
-                for idx, api_endpoint in enumerate(api_list, 1):
-                    print(f"\033[1;33m[*] Đang thử API Server dự phòng #{idx}...\033[0m")
-                    
-                    cmd = ["curl", "-s", "-L", api_endpoint, "--connect-timeout", "10"] + headers
-                    res_text = run_cmd(cmd)
-                    
-                    if res_text and "JUST A MOMENT" not in res_text.upper() and "CLOUDFLARE" not in res_text.upper():
-                        try:
-                            data = json.loads(res_text)
-                            if isinstance(data, dict):
-                                key_result = data.get("result") or data.get("key") or data.get("destination") or data.get("bypassed")
-                        except Exception:
-                            if len(res_text) < 200 and not res_text.startswith("<"):
-                                key_result = res_text
-                    
-                    if key_result and "SHUT DOWN" not in key_result.upper():
-                        break
-                        
-                if key_result and "SHUT DOWN" not in key_result.upper():
-                    print(f"\n\033[1;32m[+] Kết quả Key Bypass: \033[1;37m{key_result.strip()}\033[0m")
-                else:
-                    print("\n\033[1;31m[!] Tất cả API dự phòng đều bận hoặc bị Cloudflare chặn. Vui lòng thử lại sau.\033[0m")
-            else:
-                print("\033[1;31m[!] Bạn chưa nhập link Delta X.\033[0m")
+            try:
+                os.remove(temp_path)
+            except:
+                run_cmd(["rm", temp_path])
                 
-            while True:
-                back = input("\n\033[1;33mBấm phím 0 để quay lại giao diện chính: \033[0m").strip()
-                if back == "0":
-                    break
+            print("\033[1;32m[+] Đã tạo file script.lua và lưu vào mục auto execute.\033[0m")
+            time.sleep(2)
                 
         elif choice == "9":
             os.system('clear')
