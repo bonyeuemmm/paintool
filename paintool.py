@@ -226,7 +226,7 @@ def start_tool():
 
 def show_banner():
     clear_screen()
-    rejoin_mode_str = "Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+    rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;37m             PAIN TOOL REJOIN VIP                 \033[0m")
@@ -244,7 +244,7 @@ def show_banner():
     print("\033[1;35m[6]\033[0m \033[1;37mLogin cookie roblox\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
-    print("\033[1;35m[9]\033[0m \033[1;37mMở all tab clone\033[0m")
+    print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
     print("\033[1;31m[0] Exit\033[0m")
     print("\033[1;35m==================================================\033[0m")
 
@@ -270,8 +270,8 @@ if __name__ == "__main__":
                 if sub == "1":
                     clear_screen()
                     print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Auto rejoin khi bị kick/văng\033[0m")
-                    print("\033[1;37m2. Delay rejoin (delay vào lại thời gian đã nhập)\033[0m")
+                    print("\033[1;37m1. Auto rejoin khi bị kick/văng (Thông minh)\033[0m")
+                    print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
                     mode = input("Chọn cơ chế [1/2]: ").strip()
                     if mode == "1":
                         AUTO_REJOIN_MODE = 1
@@ -291,7 +291,7 @@ if __name__ == "__main__":
                     print("\033[1;37m2. Grow a gaden\033[0m")
                     print("\033[1;37m3. Grow a gaden 2\033[0m")
                     print("\033[1;37m4. ID/link private\033[0m")
-                    game_choice = input("Chọn game [1-4]: ").strip()
+                    game_choice = input("Chọn game [1-4] hoặc dán luôn ID: ").strip()
                     
                     if game_choice == "1":
                         TARGET_LINK = "9968396843"
@@ -467,3 +467,4 @@ if __name__ == "__main__":
             
         elif choice == "0":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
+            sys.exit(0)
