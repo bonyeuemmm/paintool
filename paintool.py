@@ -228,15 +228,21 @@ def start_tool():
                             run_cmd(["logcat", "-c"])
 
             elif AUTO_REJOIN_MODE == 2:
-                # Chỉ kiểm tra thời gian, bỏ qua mọi tiến trình nền và logcat
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
-                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang đóng hoàn toàn (đa nhiệm) và mở lại...\033[0m")
+                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang tiến hành thoát game và đóng đa nhiệm...\033[0m")
+                    
+                    run_cmd(["input", "keyevent", "3"])
+                    time.sleep(2)
+                     
                     for pkg in packages:
                         close_game(pkg)
                     time.sleep(3)
+                    
+                    print("\033[1;32m[*] Đang mở lại game...\033[0m")
                     for pkg in packages:
                         open_game(pkg)
                         time.sleep(2)
+                        
                     start_time = time.time()
                     run_cmd(["logcat", "-c"])
 
