@@ -5,6 +5,7 @@ import subprocess
 import json
 import random
 import string
+import select
 import urllib.parse
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
@@ -26,8 +27,7 @@ def clear_screen():
 
 def run_cmd(cmd_list):
     try:
-        # Giảm timeout xuống 10s để vòng lặp không bị kẹt quá lâu nếu máy lag
-        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=10)
+        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15)
         return res.stdout.strip()
     except Exception:
         return ""
@@ -147,17 +147,14 @@ def get_all_packages():
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
-    # Loại bỏ hoàn toàn cờ -W để tránh bị nghẽn (freeze). Dùng am start -S để clean memory trước khi mở.
     if TARGET_LINK:
         if TARGET_LINK.isdigit():
             deep_link = f"roblox://placeId={TARGET_LINK}"
-            run_cmd(["am", "start", "-S", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
+            run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
         else:
-            run_cmd(["am", "start", "-S", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
+            run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
     else:
-        # Nếu không có link, dùng lệnh monkey để phóng app. Rất an toàn và không bị kẹt tiến trình.
-        run_cmd(["am", "force-stop", pkg])
-        run_cmd(["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"])
+        run_cmd(["am", "start", "-S", "-W", "-n", f"{pkg}/.MainActivity"])
 
 def close_game(pkg):
     run_cmd(["am", "force-stop", pkg])
@@ -168,7 +165,7 @@ def start_tool():
     
     print("\033[1;37m[+] PAIN TOOL REJOIN VIP Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
-    print("\033[1;33m[*] Để dừng Tool: Bấm Ctrl + C (hoặc nút Giảm Âm Lượng + C).\033[0m")
+    print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter bất cứ lúc nào để ngừng Start.\033[0m")
     print("--------------------------------------------------")
     
     for pkg in packages:
@@ -182,57 +179,81 @@ def start_tool():
 
     try:
         while True:
+            if select.select([sys.stdin], [], [], 0.5)[0]:
+                cmd_input = sys.stdin.readline().strip()
+                if cmd_input == "0":
+                    print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
+                    time.sleep(1.5)
+                    return
+            
             current_time = time.time()
             elapsed_minutes = (current_time - start_time) / 60.0
             
             packages = get_all_packages()
 
-            # BƯỚC 1: Quét và vớt lại các tab bị văng/kick đột xuất (Chạy trên cả 2 chế độ)
-            for pkg in packages:
-                pid = run_cmd(["pidof", pkg])
-                if not pid:
-                    print(f"\033[1;31m[-] {pkg} bị văng/đóng đột ngột! Đang mở lại...\033[0m")
-                    open_game(pkg)
-                    time.sleep(3)
-                else:
-                    log_output = run_cmd(["logcat", "-d", "-t", "200"])
-                    error_keywords = ['disconnect', 'kicked', 'lost connection', 'error 277', 'error 268']
-                    if any(k in log_output.lower() for k in error_keywords):
-                        print(f"\033[1;33m[-] {pkg} mất kết nối/kick! Đang rejoin...\033[0m")
-                        close_game(pkg)
-                        time.sleep(2)
+            if AUTO_REJOIN_MODE == 1:
+                for pkg in packages:
+                    pid = run_cmd(["pidof", pkg])
+                    is_running = False
+                    
+                    if pid:
+                        is_running = True
+                    else:
+                        ps_out = run_cmd(["ps", "-A"])
+                        if pkg in ps_out:
+                            is_running = True
+
+                    if not is_running:
+                        print(f"\033[1;31m[-] {pkg} bị văng! Đang mở lại...\033[0m")
                         open_game(pkg)
                         time.sleep(3)
-                        run_cmd(["logcat", "-c"])
+                    else:
+                        log_output = run_cmd(["logcat", "-d", "-t", "200"])
+                        error_keywords = ['disconnect', 'kicked', 'lost connection', 'error 277', 'error 268']
+                        kicked = False
+                        
+                        for line in log_output.splitlines():
+                            line_lower = line.lower()
+                            if "unity" in line_lower or "roblox" in line_lower or pkg in line_lower:
+                                if any(k in line_lower for k in error_keywords):
+                                    kicked = True
+                                    break
+                                    
+                        if kicked:
+                            print(f"\033[1;33m[-] {pkg} mất kết nối! Đang rejoin...\033[0m")
+                            close_game(pkg)
+                            time.sleep(2)
+                            open_game(pkg)
+                            time.sleep(3)
+                            run_cmd(["logcat", "-c"])
 
-            # BƯỚC 2: Xử lý chu kỳ Delay Rejoin (Chỉ dành riêng cho chế độ 2)
-            if AUTO_REJOIN_MODE == 2:
+            elif AUTO_REJOIN_MODE == 2:
+                # Chỉ kiểm tra thời gian, bỏ qua mọi tiến trình nền và logcat
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
-                    print(f"\033[1;33m[*] Đã qua chu kỳ {DELAY_REJOIN_MINUTES} phút. Đang Force-Stop và làm mới toàn bộ đa nhiệm...\033[0m")
+                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang đóng hoàn toàn (đa nhiệm) và mở lại...\033[0m")
                     for pkg in packages:
                         close_game(pkg)
                     time.sleep(3)
                     for pkg in packages:
                         open_game(pkg)
                         time.sleep(2)
-                    start_time = time.time() # Reset đồng hồ cho chu kỳ kế tiếp
+                    start_time = time.time()
+                    run_cmd(["logcat", "-c"])
 
-            # Webhook định kỳ (5 phút)
             if (current_time - last_webhook_time) >= 300:
                 send_webhook("[PAIN TOOL] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
                 last_webhook_time = current_time
 
-            # Tạm nghỉ 2 giây để tránh nóng máy
             time.sleep(2)
 
     except KeyboardInterrupt:
-        print("\n\033[1;31m[!] Đã nhận lệnh ngắt (Ctrl+C). Đang quay lại menu...\033[0m")
-        time.sleep(1.5)
+        print("\n\033[1;31m[!] Đã dừng Start.\033[0m")
+        time.sleep(1)
         return
 
 def show_banner():
     clear_screen()
-    rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES} phút)"
+    rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;37m             PAIN TOOL REJOIN VIP                 \033[0m")
