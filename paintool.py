@@ -147,16 +147,18 @@ def get_all_packages():
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
+    # Sử dụng cờ -S để force-stop mục tiêu (thoát hẳn đa nhiệm) trước khi khởi động tiến trình mới
     if TARGET_LINK:
         if TARGET_LINK.isdigit():
             deep_link = f"roblox://placeId={TARGET_LINK}"
-            run_cmd(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
+            run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
         else:
-            run_cmd(["am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
+            run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
     else:
-        run_cmd(["am", "start", "-W", "-n", f"{pkg}/.MainActivity"])
+        run_cmd(["am", "start", "-S", "-W", "-n", f"{pkg}/.MainActivity"])
 
 def close_game(pkg):
+    # Buộc dừng ứng dụng để xoá khỏi nền
     run_cmd(["am", "force-stop", pkg])
 
 def start_tool():
@@ -174,19 +176,22 @@ def start_tool():
 
     send_webhook(f"[PAIN TOOL] Bắt đầu theo dõi {len(packages)} tab. Auto Rejoin Mode: {AUTO_REJOIN_MODE}")
 
-    minutes_passed = 0
+    start_time = time.time()
+    last_webhook_time = time.time()
+
     try:
         while True:
+            # Lắng nghe phím 0 để thoát ngay lập tức mà không làm treo vòng lặp
+            if select.select([sys.stdin], [], [], 0.5)[0]:
+                cmd_input = sys.stdin.readline().strip()
+                if cmd_input == "0":
+                    print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
+                    time.sleep(1.5)
+                    return
             
-            for _ in range(60):
-                if select.select([sys.stdin], [], [], 1)[0]:
-                    cmd_input = sys.stdin.readline().strip()
-                    if cmd_input == "0":
-                        print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
-                        time.sleep(1.5)
-                        return
+            current_time = time.time()
+            elapsed_minutes = (current_time - start_time) / 60.0
             
-            minutes_passed += 1
             packages = get_all_packages()
 
             if AUTO_REJOIN_MODE == 1:
@@ -197,27 +202,35 @@ def start_tool():
                         open_game(pkg)
                         time.sleep(3)
                     else:
-                        log_output = run_cmd(["logcat", "-d", "-t", "100", "-s", "Unity:V", "AndroidRuntime:E"])
-                        if any(k in log_output.lower() for k in ['disconnect', 'kicked', 'lost connection']):
+                        # Mở rộng từ khoá logcat để quét lỗi đa dạng hơn
+                        log_output = run_cmd(["logcat", "-d", "-t", "200"])
+                        error_keywords = ['disconnect', 'kicked', 'lost connection', 'error 277', 'error 268']
+                        if any(k in log_output.lower() for k in error_keywords):
                             print(f"\033[1;33m[-] {pkg} mất kết nối! Đang rejoin...\033[0m")
                             close_game(pkg)
                             time.sleep(2)
                             open_game(pkg)
                             time.sleep(3)
-                run_cmd(["logcat", "-c"]) 
+                            run_cmd(["logcat", "-c"]) # Dọn log để không quét trùng
 
             elif AUTO_REJOIN_MODE == 2:
-                if minutes_passed % DELAY_REJOIN_MINUTES == 0:
-                    print("\033[1;33m[*] Tới chu kỳ Delay Rejoin. Đang khởi động lại toàn bộ tab...\033[0m")
+                if elapsed_minutes >= DELAY_REJOIN_MINUTES:
+                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang đóng hoàn toàn (đa nhiệm) và mở lại...\033[0m")
                     for pkg in packages:
                         close_game(pkg)
                     time.sleep(3)
                     for pkg in packages:
                         open_game(pkg)
                         time.sleep(2)
+                    start_time = time.time() # Đặt lại bộ đếm thời gian cho chu kỳ kế tiếp
 
-            if minutes_passed % 5 == 0:
+            # Gửi Webhook định kỳ (5 phút) một cách chính xác
+            if (current_time - last_webhook_time) >= 300:
                 send_webhook("[PAIN TOOL] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
+                last_webhook_time = current_time
+
+            # Tạm dừng 2 giây ở cuối để tránh chạy CPU quá mức
+            time.sleep(2)
 
     except KeyboardInterrupt:
         print("\n\033[1;31m[!] Đã dừng Start.\033[0m")
