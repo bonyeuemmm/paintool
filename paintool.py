@@ -28,7 +28,6 @@ def clear_screen():
 
 def run_cmd(cmd_list):
     try:
-        # Thêm stdin=subprocess.DEVNULL để ngăn các lệnh hệ thống (su, am, logcat) "cướp" bàn phím của Python
         res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
         return res.stdout.strip()
     except Exception:
@@ -171,7 +170,6 @@ def listen_for_stop():
     global stop_start
     while not stop_start:
         try:
-            # Sử dụng sys.stdin.readline() trong luồng riêng
             user_input = sys.stdin.readline().strip()
             if user_input == "0":
                 stop_start = True
@@ -416,13 +414,47 @@ if __name__ == "__main__":
                 continue
 
             try:
+                # Tách riêng chuỗi Cookie
                 cookie_val = ROBLOX_CREDENTIALS.split("|")[2] if "|" in ROBLOX_CREDENTIALS else ROBLOX_CREDENTIALS
-                prefs_path = f"/data/data/{target_pkg}/shared_prefs/com.roblox.robloxmobile.xml"
-                run_cmd(["su", "-c", f"sed -i 's/<string name=\"ROBLOSECURITY\">.*<\\/string>/<string name=\"ROBLOSECURITY\">{cookie_val}<\\/string>/' {prefs_path}"])
-                print(f"\033[1;32m[+] Đã thiết lập cookie cho {target_pkg} thành công!\033[0m")
+                cookie_val = cookie_val.strip()
+                
+                print(f"\033[1;33m[*] Đang buộc dừng ứng dụng {target_pkg}...\033[0m")
+                close_game(target_pkg)
+                time.sleep(1)
+
+                prefs_dir = f"/data/data/{target_pkg}/shared_prefs"
+                prefs_path = f"{prefs_dir}/com.roblox.robloxmobile.xml"
+                
+                # Tạo thư mục shared_prefs nếu chưa có
+                run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
+                
+                # Cấu trúc file XML Roblox tiêu chuẩn
+                xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="ROBLOSECURITY">{cookie_val}</string>
+</map>'''
+                
+                # Tạo file tạm và đè nội dung vào file shared_prefs
+                temp_xml = "/sdcard/temp_roblox_cookie.xml"
+                with open(temp_xml, "w", encoding="utf-8") as f:
+                    f.write(xml_content)
+                
+                run_cmd(["su", "-c", f"cp {temp_xml} {prefs_path}"])
+                run_cmd(["su", "-c", f"chmod 666 {prefs_path}"])
+                
+                if os.path.exists(temp_xml):
+                    os.remove(temp_xml)
+                
+                print(f"\033[1;32m[+] Đã tiêm Cookie vào {target_pkg} thành công!\033[0m")
+                print(f"\033[1;36m[*] Đang tiến hành mở game {target_pkg}...\033[0m")
+                time.sleep(1)
+                
+                # Gọi hàm mở ứng dụng tự động
+                open_game(target_pkg)
+                
             except Exception as e:
                 print(f"\033[1;31m[-] Lỗi trong quá trình tiêm cookie: {str(e)}\033[0m")
-            time.sleep(1.5)
+            time.sleep(2)
             
         elif choice == "7":
             clear_screen()
