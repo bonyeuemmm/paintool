@@ -150,14 +150,20 @@ def open_game(pkg):
     if TARGET_LINK:
         if TARGET_LINK.isdigit():
             deep_link = f"roblox://placeId={TARGET_LINK}"
+            run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -a android.intent.action.VIEW -d {deep_link} {pkg}"])
             run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
         else:
+            run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -a android.intent.action.VIEW -d {TARGET_LINK} {pkg}"])
             run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
     else:
+        run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -n {pkg}/.MainActivity"])
         run_cmd(["am", "start", "-S", "-W", "-n", f"{pkg}/.MainActivity"])
 
 def close_game(pkg):
+    run_cmd(["su", "-c", f"am force-stop {pkg}"])
     run_cmd(["am", "force-stop", pkg])
+    run_cmd(["su", "-c", f"pkill -f {pkg}"])
+    run_cmd(["su", "-c", f"killall {pkg}"])
 
 def start_tool():
     clear_screen()
