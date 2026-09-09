@@ -5,7 +5,7 @@ import subprocess
 import json
 import random
 import string
-import select
+import threading
 import urllib.parse
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
@@ -20,6 +20,7 @@ SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
+stop_start = False
 
 def clear_screen():
     os.system('stty sane 2>/dev/null')
@@ -165,7 +166,19 @@ def close_game(pkg):
     run_cmd(["su", "-c", f"pkill -f {pkg}"])
     run_cmd(["su", "-c", f"killall {pkg}"])
 
+def listen_for_stop():
+    global stop_start
+    while not stop_start:
+        try:
+            user_input = sys.stdin.readline().strip()
+            if user_input == "0":
+                stop_start = True
+                break
+        except:
+            break
+
 def start_tool():
+    global stop_start
     clear_screen()
     packages = get_all_packages()
     
@@ -182,16 +195,13 @@ def start_tool():
 
     start_time = time.time()
     last_webhook_time = time.time()
+    
+    stop_start = False
+    listener = threading.Thread(target=listen_for_stop, daemon=True)
+    listener.start()
 
     try:
-        while True:
-            if select.select([sys.stdin], [], [], 0.5)[0]:
-                cmd_input = sys.stdin.readline().strip()
-                if cmd_input == "0":
-                    print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
-                    time.sleep(1.5)
-                    return
-            
+        while not stop_start:
             current_time = time.time()
             elapsed_minutes = (current_time - start_time) / 60.0
             
@@ -199,6 +209,7 @@ def start_tool():
 
             if AUTO_REJOIN_MODE == 1:
                 for pkg in packages:
+                    if stop_start: break
                     pid = run_cmd(["pidof", pkg])
                     is_running = False
                     
@@ -256,7 +267,14 @@ def start_tool():
                 send_webhook("[PAIN TOOL] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
                 last_webhook_time = current_time
 
-            time.sleep(2)
+            for _ in range(4):
+                if stop_start: break
+                time.sleep(0.5)
+
+        if stop_start:
+            print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
+            time.sleep(1.5)
+            return
 
     except KeyboardInterrupt:
         print("\n\033[1;31m[!] Đã dừng Start.\033[0m")
@@ -330,7 +348,7 @@ if __name__ == "__main__":
                     print("\033[1;37m2. Grow a gaden\033[0m")
                     print("\033[1;37m3. Grow a gaden 2\033[0m")
                     print("\033[1;37m4. ID/link private\033[0m")
-                    game_choice = input("Chọn game [1-4] hoặc dán luôn ID: ").strip()
+                    game_choice = input("Chọn game [1-4]: ").strip()
                     
                     if game_choice == "1":
                         TARGET_LINK = "9968396843"
@@ -352,15 +370,6 @@ if __name__ == "__main__":
                                 SELECTED_GAME_NAME = "Server VIP Custom"
                                 print(f"\033[1;32m[+] Đã nhận Link Server VIP!\033[0m")
                             time.sleep(1.5)
-                    elif len(game_choice) > 4: 
-                        TARGET_LINK = game_choice
-                        if game_choice.isdigit():
-                            SELECTED_GAME_NAME = f"Game ID: {game_choice}"
-                            print(f"\033[1;32m[+] Tự động nhận Game ID: {game_choice}\033[0m")
-                        else:
-                            SELECTED_GAME_NAME = "Server VIP Custom"
-                            print(f"\033[1;32m[+] Tự động nhận Link Server VIP!\033[0m")
-                        time.sleep(1.5)
                     time.sleep(1)
                 elif sub == "3":
                     break
