@@ -28,7 +28,8 @@ def clear_screen():
 
 def run_cmd(cmd_list):
     try:
-        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15)
+        # Thêm stdin=subprocess.DEVNULL để ngăn các lệnh hệ thống (su, am, logcat) "cướp" bàn phím của Python
+        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
         return res.stdout.strip()
     except Exception:
         return ""
@@ -170,6 +171,7 @@ def listen_for_stop():
     global stop_start
     while not stop_start:
         try:
+            # Sử dụng sys.stdin.readline() trong luồng riêng
             user_input = sys.stdin.readline().strip()
             if user_input == "0":
                 stop_start = True
