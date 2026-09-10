@@ -412,7 +412,6 @@ if __name__ == "__main__":
             if not filename_input:
                 continue
 
-            # Tự động tìm kiếm file trong thư mục Download của điện thoại
             possible_paths = [
                 f"/sdcard/Download/{filename_input}",
                 f"/storage/emulated/0/Download/{filename_input}",
@@ -433,7 +432,7 @@ if __name__ == "__main__":
                 continue
 
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     raw_input_data = f.read().strip()
                 print(f"\033[1;32m[+] Đã tìm thấy và đọc file thành công tại: {file_path}\033[0m")
             except Exception as fe:
@@ -447,8 +446,10 @@ if __name__ == "__main__":
 
             try:
                 cookie_val = ""
-                if "_|WARNING" in raw_input_data:
-                    start_idx = raw_input_data.find("_|WARNING")
+                if "WARNING" in raw_input_data:
+                    start_idx = raw_input_data.find("WARNING")
+                    if start_idx > 5:
+                        start_idx -= 5
                     sub_part = raw_input_data[start_idx:]
                     end_idx = len(sub_part)
                     for char_idx, char in enumerate(sub_part):
@@ -456,10 +457,12 @@ if __name__ == "__main__":
                             end_idx = char_idx
                             break
                     cookie_val = sub_part[:end_idx].strip()
+                    if "WARNING" in cookie_val and not cookie_val.startswith("_"):
+                        cookie_val = "_" + cookie_val.lstrip("-_ ")
                 elif "|" in raw_input_data:
                     parts = raw_input_data.split("|")
                     for p in parts:
-                        if "_|WARNING" in p or len(p.strip()) > 100:
+                        if "WARNING" in p or len(p.strip()) > 100:
                             cookie_val = p.strip()
                             break
                     if not cookie_val and len(parts) > 0:
@@ -469,8 +472,8 @@ if __name__ == "__main__":
 
                 cookie_val = cookie_val.split()[0] if cookie_val else ""
                 
-                if not cookie_val.startswith("_|WARNING"):
-                    print("\033[1;31m[-] Cảnh báo: File không chứa định dạng chuẩn '_|WARNING...' của cookie!\033[0m")
+                if "WARNING" not in cookie_val:
+                    print("\033[1;31m[-] Cảnh báo: File không chứa chuỗi cookie Roblox hợp lệ!\033[0m")
                     time.sleep(2.5)
                     continue
 
