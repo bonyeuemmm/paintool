@@ -454,7 +454,6 @@ if __name__ == "__main__":
                 
                 run_cmd(["su", "-c", f"cp {temp_xml} {prefs_path}"])
                 
-                # 6. Sửa quyền sở hữu (chown), phân quyền (chmod) & Fix SELinux context
                 if app_uid:
                     run_cmd(["su", "-c", f"chown -R {app_uid} {prefs_dir}"])
                 
@@ -462,10 +461,61 @@ if __name__ == "__main__":
                 run_cmd(["su", "-c", f"chmod 666 {prefs_path}"])
                 run_cmd(["su", "-c", f"restorecon -R {prefs_dir}"])
                 
+                cookies_dir = f"/data/data/{target_pkg}/app_webview/Default/Network"
+                cookies_db = f"{cookies_dir}/Cookies"
+                run_cmd(["su", "-c", f"mkdir -p {cookies_dir}"])
+                
+                import sqlite3
+                temp_db = "/sdcard/temp_cookies.db"
+                if os.path.exists(temp_db):
+                    os.remove(temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE cookies (
+                        creation_utc INTEGER,
+                        host_key TEXT,
+                        top_level_site TEXT,
+                        name TEXT,
+                        value TEXT,
+                        path TEXT,
+                        expires_utc INTEGER,
+                        is_secure INTEGER,
+                        is_httponly INTEGER,
+                        last_access_utc INTEGER,
+                        has_expires INTEGER,
+                        is_persistent INTEGER,
+                        priority INTEGER,
+                        same_site INTEGER,
+                        source_scheme INTEGER,
+                        source_port INTEGER,
+                        last_update_utc INTEGER
+                    )
+                """)
+                
+                import time as t
+                epoch_microseconds = int((t.time() + 31536000) * 1000000 + 11644473600000000)
+                cursor.execute(
+                    "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (epoch_microseconds, ".roblox.com", "", ".ROBLOSECURITY", cookie_val, "/", epoch_microseconds, 1, 1, epoch_microseconds, 1, 1, 1, 1, 2, 443, epoch_microseconds)
+                )
+                conn.commit()
+                conn.close()
+                
+                run_cmd(["su", "-c", f"cp {temp_db} {cookies_db}"])
+                if app_uid:
+                    run_cmd(["su", "-c", f"chown -R {app_uid} {cookies_dir}"])
+                run_cmd(["su", "-c", f"chmod 777 {cookies_dir}"])
+                run_cmd(["su", "-c", f"chmod 666 {cookies_db}"])
+                run_cmd(["su", "-c", f"restorecon -R {cookies_dir}"])
+                
                 if os.path.exists(temp_xml):
                     os.remove(temp_xml)
+                if os.path.exists(temp_db):
+                    os.remove(temp_db)
                 
-                print(f"\033[1;32m[+] Đã tiêm Cookie & set quyền thành công cho {target_pkg}!\033[0m")
+                print(f"\033[1;32m[+] Đã tiêm Cookie hoàn tất vào Shared Preferences và Webview Database cho {target_pkg}!\033[0m")
                 print(f"\033[1;36m[*] Đang mở ứng dụng...\033[0m")
                 time.sleep(1)
                 
@@ -548,7 +598,6 @@ if __name__ == "__main__":
             found_pkgs = []
             for line in output.splitlines():
                 if PACKAGE_PREFIX in line:
-                    parts = line.split(" grand")
                     parts = line.split(":")
                     if len(parts) > 1:
                         found_pkgs.append(parts[1].strip())
