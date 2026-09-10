@@ -300,7 +300,7 @@ def show_banner():
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mXử lý Cookie Roblox (Hỗ trợ đọc File TXT)\033[0m")
+    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Khuyên dùng)\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -406,34 +406,27 @@ if __name__ == "__main__":
             
         elif choice == "6":
             clear_screen()
-            print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX (FILE & DIRECT ENGINE) ===\033[0m")
-            print("\033[1;36m1. Nhập trực tiếp chuỗi Cookie/Text\033[0m")
-            print("\033[1;36m2. Đọc từ file .txt trên bộ nhớ (Khuyên dùng để tránh lỗi tràn bàn phím)\033[0m")
-            input_mode = input("Chọn phương thức nhập [1/2]: ").strip()
+            print("\033[1;35m=== ĐĂNG NHẬP COOKIE TỪ FILE TXT ===\033[0m")
+            file_path = input("Nhập đường dẫn file (VD: /sdcard/Download/cookie.txt): ").strip()
+            
+            if not file_path:
+                continue
 
-            raw_input_data = ""
-            if input_mode == "2":
-                file_path = input("Nhập đường dẫn file chứa cookie (VD: /sdcard/cookie.txt): ").strip()
-                if os.path.exists(file_path):
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            raw_input_data = f.read().strip()
-                        print(f"\033[1;32m[+] Đã đọc thành công file: {file_path}\033[0m")
-                    except Exception as fe:
-                        print(f"\033[1;31m[-] Lỗi đọc file: {str(fe)}\033[0m")
-                        time.sleep(2)
-                        continue
-                else:
-                    print(f"\033[1;31m[-] Không tìm thấy file tại đường dẫn: {file_path}\033[0m")
-                    time.sleep(2)
-                    continue
-            else:
-                raw_input_data = input("Dán toàn bộ thông tin (user|pass|cookie hoặc cookie): ").strip()
+            if not os.path.exists(file_path):
+                print(f"\033[1;31m[-] Không tìm thấy file tại: {file_path}\033[0m")
+                time.sleep(2)
+                continue
 
-            if not raw_input_data:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_input_data = f.read().strip()
+                print(f"\033[1;32m[+] Đã đọc file thành công!\033[0m")
+            except Exception as fe:
+                print(f"\033[1;31m[-] Lỗi đọc file: {str(fe)}\033[0m")
+                time.sleep(2)
                 continue
                 
-            target_pkg = input("Nhập package name để đăng nhập (Ví dụ: com.roblox.client): ").strip()
+            target_pkg = input("Nhập package name cần đăng nhập (Ví dụ: com.roblox.client): ").strip()
             if not target_pkg:
                 continue
 
@@ -441,7 +434,6 @@ if __name__ == "__main__":
                 cookie_val = ""
                 if "_|WARNING" in raw_input_data:
                     start_idx = raw_input_data.find("_|WARNING")
-                    # Cắt chuỗi từ _|WARNING đến hết ký tự hợp lệ của cookie (thường dài khoảng 600-700 ký tự)
                     sub_part = raw_input_data[start_idx:]
                     end_idx = len(sub_part)
                     for char_idx, char in enumerate(sub_part):
@@ -463,7 +455,7 @@ if __name__ == "__main__":
                 cookie_val = cookie_val.split()[0] if cookie_val else ""
                 
                 if not cookie_val.startswith("_|WARNING"):
-                    print("\033[1;31m[-] Cảnh báo: Không tìm thấy định dạng chuẩn '_|WARNING...' trong chuỗi xử lý!\033[0m")
+                    print("\033[1;31m[-] Cảnh báo: File không chứa định dạng chuẩn '_|WARNING...' của cookie!\033[0m")
                     time.sleep(2.5)
                     continue
 
@@ -483,7 +475,7 @@ if __name__ == "__main__":
                         print(f"\033[1;32m[+] Xác thực thành công tài khoản: {username_check} (ID: {user_id_check})\033[0m")
                 except Exception as api_err:
                     print(f"\033[1;31m[-] Cookie không hợp lệ hoặc đã hết hạn (Lỗi API: {str(api_err)})\033[0m")
-                    proceed_anyway = input("Bạn có muốn tiếp tục ép tiêm cookie này không? (y/n): ").strip().lower()
+                    proceed_anyway = input("Vẫn tiếp tục ép tiêm cookie này? (y/n): ").strip().lower()
                     if proceed_anyway != 'y':
                         continue
 
