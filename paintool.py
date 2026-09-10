@@ -405,7 +405,7 @@ if __name__ == "__main__":
         elif choice == "6":
             clear_screen()
             print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX ===\033[0m")
-            ROBLOX_CREDENTIALS = input("Nhập thông tin (user name|mật khẩu|cookie) (Để trống để thoát): ").strip()
+            ROBLOX_CREDENTIALS = input("Nhập thông tin (user name|mật khẩu|cookie hoặc chỉ dán cookie) (Để trống để thoát): ").strip()
             if not ROBLOX_CREDENTIALS:
                 continue
                 
@@ -414,8 +414,13 @@ if __name__ == "__main__":
                 continue
 
             try:
-                # 1. Tách chuỗi lấy Cookie chính xác
-                cookie_val = ROBLOX_CREDENTIALS.split("|")[2] if "|" in ROBLOX_CREDENTIALS else ROBLOX_CREDENTIALS
+                if ROBLOX_CREDENTIALS.startswith("_|WARNING"):
+                    cookie_val = ROBLOX_CREDENTIALS
+                elif ROBLOX_CREDENTIALS.count("|") >= 2:
+                    cookie_val = ROBLOX_CREDENTIALS.split("|", 2)[2]
+                else:
+                    cookie_val = ROBLOX_CREDENTIALS
+
                 cookie_val = cookie_val.strip()
                 
                 print(f"\033[1;33m[*] Đang tắt hoàn toàn ứng dụng {target_pkg}...\033[0m")
@@ -425,7 +430,6 @@ if __name__ == "__main__":
                 prefs_dir = f"/data/data/{target_pkg}/shared_prefs"
                 prefs_path = f"{prefs_dir}/com.roblox.robloxmobile.xml"
                 
-                # 2. Tìm UID chính xác của App để cấp quyền đọc/ghi
                 app_uid = run_cmd(["su", "-c", f"stat -c '%u:%g' /data/data/{target_pkg}"])
                 if not app_uid or ":" not in app_uid:
                     app_uid = run_cmd(["su", "-c", f"dumpsys package {target_pkg} | grep userId="])
@@ -435,18 +439,15 @@ if __name__ == "__main__":
                     else:
                         app_uid = ""
 
-                # 3. Tạo thư mục shared_prefs & Xóa file cũ để tránh đè lỗi
                 run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
                 run_cmd(["su", "-c", f"rm -f {prefs_path}"])
                 
-                # 4. Nội dung XML Roblox chuẩn (Cần có IsLoggedIn)
                 xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
     <boolean name="IsLoggedIn" value="true" />
     <string name="ROBLOSECURITY">{cookie_val}</string>
 </map>'''
                 
-                # 5. Ghi file XML qua Root
                 temp_xml = "/sdcard/temp_roblox_cookie.xml"
                 with open(temp_xml, "w", encoding="utf-8") as f:
                     f.write(xml_content)
@@ -468,7 +469,6 @@ if __name__ == "__main__":
                 print(f"\033[1;36m[*] Đang mở ứng dụng...\033[0m")
                 time.sleep(1)
                 
-                # 7. Mở app bằng hàm open_game
                 open_game(target_pkg)
                 
             except Exception as e:
@@ -548,6 +548,7 @@ if __name__ == "__main__":
             found_pkgs = []
             for line in output.splitlines():
                 if PACKAGE_PREFIX in line:
+                    parts = line.split(" grand")
                     parts = line.split(":")
                     if len(parts) > 1:
                         found_pkgs.append(parts[1].strip())
