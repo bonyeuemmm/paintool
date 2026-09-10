@@ -7,6 +7,7 @@ import random
 import string
 import threading
 import urllib.parse
+import sqlite3
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
@@ -446,6 +447,7 @@ if __name__ == "__main__":
 <map>
     <boolean name="IsLoggedIn" value="true" />
     <string name="ROBLOSECURITY">{cookie_val}</string>
+    <string name="GuestData">{cookie_val}</string>
 </map>'''
                 
                 temp_xml = "/sdcard/temp_roblox_cookie.xml"
@@ -465,7 +467,6 @@ if __name__ == "__main__":
                 cookies_db = f"{cookies_dir}/Cookies"
                 run_cmd(["su", "-c", f"mkdir -p {cookies_dir}"])
                 
-                import sqlite3
                 temp_db = "/sdcard/temp_cookies.db"
                 if os.path.exists(temp_db):
                     os.remove(temp_db)
@@ -473,32 +474,39 @@ if __name__ == "__main__":
                 conn = sqlite3.connect(temp_db)
                 cursor = conn.cursor()
                 cursor.execute("""
-                    CREATE TABLE cookies (
-                        creation_utc INTEGER,
-                        host_key TEXT,
-                        top_level_site TEXT,
-                        name TEXT,
-                        value TEXT,
-                        path TEXT,
-                        expires_utc INTEGER,
-                        is_secure INTEGER,
-                        is_httponly INTEGER,
-                        last_access_utc INTEGER,
-                        has_expires INTEGER,
-                        is_persistent INTEGER,
-                        priority INTEGER,
-                        same_site INTEGER,
-                        source_scheme INTEGER,
-                        source_port INTEGER,
-                        last_update_utc INTEGER
+                    CREATE TABLE IF NOT EXISTS cookies (
+                        creation_utc INTEGER NOT NULL,
+                        host_key TEXT NOT NULL,
+                        top_level_site TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        value TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        expires_utc INTEGER NOT NULL,
+                        is_secure INTEGER NOT NULL,
+                        is_httponly INTEGER NOT NULL,
+                        last_access_utc INTEGER NOT NULL,
+                        has_expires INTEGER NOT NULL,
+                        is_persistent INTEGER NOT NULL,
+                        priority INTEGER NOT NULL,
+                        samesite INTEGER NOT NULL,
+                        source_scheme INTEGER NOT NULL,
+                        source_port INTEGER NOT NULL,
+                        is_same_party INTEGER NOT NULL DEFAULT 0,
+                        last_update_utc INTEGER NOT NULL DEFAULT 0
                     )
                 """)
                 
                 import time as t
-                epoch_microseconds = int((t.time() + 31536000) * 1000000 + 11644473600000000)
+                epoch_now = int(t.time() * 1000000 + 11644473600000000)
+                epoch_expires = int((t.time() + 31536000) * 1000000 + 11644473600000000)
+                
                 cursor.execute(
-                    "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (epoch_microseconds, ".roblox.com", "", ".ROBLOSECURITY", cookie_val, "/", epoch_microseconds, 1, 1, epoch_microseconds, 1, 1, 1, 1, 2, 443, epoch_microseconds)
+                    "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (epoch_now, ".roblox.com", "", ".ROBLOSECURITY", cookie_val, "/", epoch_expires, 1, 1, epoch_now, 1, 1, 1, 0, 2, 443, 0, epoch_now)
+                )
+                cursor.execute(
+                    "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (epoch_now, "roblox.com", "", ".ROBLOSECURITY", cookie_val, "/", epoch_expires, 1, 1, epoch_now, 1, 1, 1, 0, 2, 443, 0, epoch_now)
                 )
                 conn.commit()
                 conn.close()
