@@ -157,8 +157,8 @@ def open_game(pkg):
             run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -a android.intent.action.VIEW -d {TARGET_LINK} {pkg}"])
             run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
     else:
-        run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -n {pkg}/.MainActivity"])
-        run_cmd(["am", "start", "-S", "-W", "-n", f"{pkg}/.MainActivity"])
+        run_cmd(["su", "-c", f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"])
+        run_cmd(["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"])
 
 def close_game(pkg):
     run_cmd(["su", "-c", f"am force-stop {pkg}"])
@@ -409,47 +409,63 @@ if __name__ == "__main__":
             if not ROBLOX_CREDENTIALS:
                 continue
                 
-            target_pkg = input("Nhập package name để đăng nhập (Để trống để thoát): ").strip()
+            target_pkg = input("Nhập package name để đăng nhập (Ví dụ: com.roblox.client): ").strip()
             if not target_pkg:
                 continue
 
             try:
-                # Tách riêng chuỗi Cookie
+                # 1. Tách chuỗi lấy Cookie chính xác
                 cookie_val = ROBLOX_CREDENTIALS.split("|")[2] if "|" in ROBLOX_CREDENTIALS else ROBLOX_CREDENTIALS
                 cookie_val = cookie_val.strip()
                 
-                print(f"\033[1;33m[*] Đang buộc dừng ứng dụng {target_pkg}...\033[0m")
+                print(f"\033[1;33m[*] Đang tắt hoàn toàn ứng dụng {target_pkg}...\033[0m")
                 close_game(target_pkg)
                 time.sleep(1)
 
                 prefs_dir = f"/data/data/{target_pkg}/shared_prefs"
                 prefs_path = f"{prefs_dir}/com.roblox.robloxmobile.xml"
                 
-                # Tạo thư mục shared_prefs nếu chưa có
+                # 2. Tìm UID chính xác của App để cấp quyền đọc/ghi
+                app_uid = run_cmd(["su", "-c", f"stat -c '%u:%g' /data/data/{target_pkg}"])
+                if not app_uid or ":" not in app_uid:
+                    app_uid = run_cmd(["su", "-c", f"dumpsys package {target_pkg} | grep userId="])
+                    if "=" in app_uid:
+                        uid_num = app_uid.split("=")[1].split()[0]
+                        app_uid = f"{uid_num}:{uid_num}"
+                    else:
+                        app_uid = ""
+
+                # 3. Tạo thư mục shared_prefs nếu chưa có
                 run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
                 
-                # Cấu trúc file XML Roblox tiêu chuẩn
+                # 4. Nội dung XML Roblox
                 xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
     <string name="ROBLOSECURITY">{cookie_val}</string>
 </map>'''
                 
-                # Tạo file tạm và đè nội dung vào file shared_prefs
+                # 5. Ghi file XML qua Root
                 temp_xml = "/sdcard/temp_roblox_cookie.xml"
                 with open(temp_xml, "w", encoding="utf-8") as f:
                     f.write(xml_content)
                 
                 run_cmd(["su", "-c", f"cp {temp_xml} {prefs_path}"])
+                
+                # 6. Sửa quyền sở hữu (chown) và phân quyền file (chmod)
+                if app_uid:
+                    run_cmd(["su", "-c", f"chown {app_uid} {prefs_path}"])
+                    run_cmd(["su", "-c", f"chown {app_uid} {prefs_dir}"])
+                
                 run_cmd(["su", "-c", f"chmod 666 {prefs_path}"])
                 
                 if os.path.exists(temp_xml):
                     os.remove(temp_xml)
                 
-                print(f"\033[1;32m[+] Đã tiêm Cookie vào {target_pkg} thành công!\033[0m")
-                print(f"\033[1;36m[*] Đang tiến hành mở game {target_pkg}...\033[0m")
+                print(f"\033[1;32m[+] Đã tiêm Cookie & set quyền thành công cho {target_pkg}!\033[0m")
+                print(f"\033[1;36m[*] Đang mở ứng dụng...\033[0m")
                 time.sleep(1)
                 
-                # Gọi hàm mở ứng dụng tự động
+                # 7. Mở app bằng hàm open_game (đã dùng monkey)
                 open_game(target_pkg)
                 
             except Exception as e:
