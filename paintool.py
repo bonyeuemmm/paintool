@@ -298,7 +298,7 @@ def show_banner():
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mLogin cookie roblox\033[0m")
+    print("\033[1;35m[6]\033[0m \033[1;37mXử lý Cookie Roblox (Auto Login Fix)\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -435,12 +435,14 @@ if __name__ == "__main__":
                     else:
                         app_uid = ""
 
-                # 3. Tạo thư mục shared_prefs nếu chưa có
+                # 3. Tạo thư mục shared_prefs & Xóa file cũ để tránh đè lỗi
                 run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
+                run_cmd(["su", "-c", f"rm -f {prefs_path}"])
                 
-                # 4. Nội dung XML Roblox
+                # 4. Nội dung XML Roblox chuẩn (Cần có IsLoggedIn)
                 xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
+    <boolean name="IsLoggedIn" value="true" />
     <string name="ROBLOSECURITY">{cookie_val}</string>
 </map>'''
                 
@@ -451,12 +453,13 @@ if __name__ == "__main__":
                 
                 run_cmd(["su", "-c", f"cp {temp_xml} {prefs_path}"])
                 
-                # 6. Sửa quyền sở hữu (chown) và phân quyền file (chmod)
+                # 6. Sửa quyền sở hữu (chown), phân quyền (chmod) & Fix SELinux context
                 if app_uid:
-                    run_cmd(["su", "-c", f"chown {app_uid} {prefs_path}"])
-                    run_cmd(["su", "-c", f"chown {app_uid} {prefs_dir}"])
+                    run_cmd(["su", "-c", f"chown -R {app_uid} {prefs_dir}"])
                 
+                run_cmd(["su", "-c", f"chmod 777 {prefs_dir}"])
                 run_cmd(["su", "-c", f"chmod 666 {prefs_path}"])
+                run_cmd(["su", "-c", f"restorecon -R {prefs_dir}"])
                 
                 if os.path.exists(temp_xml):
                     os.remove(temp_xml)
@@ -465,7 +468,7 @@ if __name__ == "__main__":
                 print(f"\033[1;36m[*] Đang mở ứng dụng...\033[0m")
                 time.sleep(1)
                 
-                # 7. Mở app bằng hàm open_game (đã dùng monkey)
+                # 7. Mở app bằng hàm open_game
                 open_game(target_pkg)
                 
             except Exception as e:
