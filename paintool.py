@@ -300,7 +300,7 @@ def show_banner():
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Khuyên dùng)\033[0m")
+    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Tự động tìm trong Download)\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -407,20 +407,35 @@ if __name__ == "__main__":
         elif choice == "6":
             clear_screen()
             print("\033[1;35m=== ĐĂNG NHẬP COOKIE TỪ FILE TXT ===\033[0m")
-            file_path = input("Nhập đường dẫn file (VD: /sdcard/Download/cookie.txt): ").strip()
+            filename_input = input("Nhập tên file của bạn (Ví dụ: cookie.txt): ").strip()
             
-            if not file_path:
+            if not filename_input:
                 continue
 
-            if not os.path.exists(file_path):
-                print(f"\033[1;31m[-] Không tìm thấy file tại: {file_path}\033[0m")
-                time.sleep(2)
+            # Tự động tìm kiếm file trong thư mục Download của điện thoại
+            possible_paths = [
+                f"/sdcard/Download/{filename_input}",
+                f"/storage/emulated/0/Download/{filename_input}",
+                f"/sdcard/{filename_input}",
+                f"/storage/emulated/0/{filename_input}"
+            ]
+            
+            file_path = ""
+            for p in possible_paths:
+                if os.path.exists(p):
+                    file_path = p
+                    break
+
+            if not file_path:
+                print(f"\033[1;31m[-] Không tìm thấy file '{filename_input}' trong thư mục Download hoặc bộ nhớ chính!\033[0m")
+                print("\033[1;33m[*] Hãy chắc chắn bạn đã đặt file trong thư mục Download.\033[0m")
+                time.sleep(3)
                 continue
 
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     raw_input_data = f.read().strip()
-                print(f"\033[1;32m[+] Đã đọc file thành công!\033[0m")
+                print(f"\033[1;32m[+] Đã tìm thấy và đọc file thành công tại: {file_path}\033[0m")
             except Exception as fe:
                 print(f"\033[1;31m[-] Lỗi đọc file: {str(fe)}\033[0m")
                 time.sleep(2)
