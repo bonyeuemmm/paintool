@@ -7,6 +7,7 @@ import random
 import string
 import threading
 import urllib.parse
+import urllib.request
 import sqlite3
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
@@ -405,9 +406,9 @@ if __name__ == "__main__":
             
         elif choice == "6":
             clear_screen()
-            print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX (DEEP CLEAN ENGINE) ===\033[0m")
-            ROBLOX_CREDENTIALS = input("Nhập thông tin (user name|mật khẩu|cookie hoặc chỉ dán cookie) (Để trống để thoát): ").strip()
-            if not ROBLOX_CREDENTIALS:
+            print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX (ADVANCED MULTI-FORMAT ENGINE) ===\033[0m")
+            raw_input_data = input("Nhập thông tin (Dạng user|pass|cookie hoặc chỉ dán mỗi cookie _|WARNING...): ").strip()
+            if not raw_input_data:
                 continue
                 
             target_pkg = input("Nhập package name để đăng nhập (Ví dụ: com.roblox.client): ").strip()
@@ -415,15 +416,57 @@ if __name__ == "__main__":
                 continue
 
             try:
-                if ROBLOX_CREDENTIALS.startswith("_|WARNING"):
-                    cookie_val = ROBLOX_CREDENTIALS
-                elif ROBLOX_CREDENTIALS.count("|") >= 2:
-                    cookie_val = ROBLOX_CREDENTIALS.split("|", 2)[2]
+                cookie_val = ""
+                # Hỗ trợ tách chuỗi linh hoạt theo định dạng user|pass|cookie hoặc user:pass:cookie hoặc chỉ có cookie
+                if "_|WARNING" in raw_input_data:
+                    start_idx = raw_input_data.find("_|WARNING")
+                    cookie_val = raw_input_data[start_idx:].strip()
+                elif "|" in raw_input_data:
+                    parts = raw_input_data.split("|")
+                    for p in parts:
+                        if "_|WARNING" in p or len(p.strip()) > 100:
+                            cookie_val = p.strip()
+                            break
+                    if not cookie_val and len(parts) > 0:
+                        cookie_val = parts[-1].strip()
+                elif ":" in raw_input_data:
+                    parts = raw_input_data.split(":")
+                    for p in parts:
+                        if "_|WARNING" in p or len(p.strip()) > 100:
+                            cookie_val = p.strip()
+                            break
+                    if not cookie_val and len(parts) > 0:
+                        cookie_val = parts[-1].strip()
                 else:
-                    cookie_val = ROBLOX_CREDENTIALS
+                    cookie_val = raw_input_data
 
-                cookie_val = cookie_val.strip()
+                cookie_val = cookie_val.replace('"', '').replace("'", "").strip()
                 
+                if not cookie_val.startswith("_|WARNING"):
+                    print("\033[1;31m[-] Cảnh báo: Định dạng cookie không tìm thấy chuỗi chuẩn '_|WARNING...'. Vui lòng kiểm tra lại!\033[0m")
+                    time.sleep(2.5)
+                    continue
+
+                print("\033[1;33m[*] Đang kiểm tra tính hợp lệ của Cookie qua API Roblox...\033[0m")
+                try:
+                    req_auth = urllib.request.Request(
+                        "https://users.roblox.com/v1/users/authenticated",
+                        headers={
+                            "Cookie": f".ROBLOSECURITY={cookie_val}",
+                            "User-Agent": "Roblox/WinInet"
+                        }
+                    )
+                    with urllib.request.urlopen(req_auth, timeout=10) as response:
+                        user_data = json.loads(response.read().decode())
+                        username_check = user_data.get("name", "Unknown")
+                        user_id_check = user_data.get("id", "Unknown")
+                        print(f"\033[1;32m[+] Xác thực thành công tài khoản: {username_check} (ID: {user_id_check})\033[0m")
+                except Exception as api_err:
+                    print(f"\033[1;31m[-] Cookie không hợp lệ hoặc đã hết hạn (Lỗi API: {str(api_err)})\033[0m")
+                    proceed_anyway = input("Bạn có muốn tiếp tục ép tiêm cookie này không? (y/n): ").strip().lower()
+                    if proceed_anyway != 'y':
+                        continue
+
                 print(f"\033[1;33m[*] Tắt hoàn toàn {target_pkg}...\033[0m")
                 close_game(target_pkg)
                 time.sleep(1)
@@ -437,7 +480,7 @@ if __name__ == "__main__":
                     else:
                         app_uid = ""
 
-                print("\033[1;33m[*] Dọn dẹp session cũ...\033[0m")
+                print("\033[1;33m[*] Dọn dẹp tệp tin rác & session cũ trong bộ nhớ ứng dụng...\033[0m")
                 run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_webview/Default/*"])
                 run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_webview/Local\\ Storage/*"])
                 run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_textures/*"])
@@ -528,15 +571,15 @@ if __name__ == "__main__":
                 if os.path.exists(temp_db):
                     os.remove(temp_db)
                 
-                print(f"\033[1;32m[+] Hoàn tất tiêm Cookie nâng cao cho {target_pkg}!\033[0m")
-                print(f"\033[1;36m[*] Đang khởi chạy ứng dụng...\033[0m")
+                print(f"\033[1;32m[+] Tiêm Cookie thành công tuyệt đối cho gói: {target_pkg}!\033[0m")
+                print(f"\033[1;36m[*] Đang khởi động lại ứng dụng để áp dụng phiên đăng nhập...\033[0m")
                 time.sleep(1)
                 
                 open_game(target_pkg)
                 
             except Exception as e:
                 print(f"\033[1;31m[-] Lỗi tiêm cookie: {str(e)}\033[0m")
-            time.sleep(2)
+            time.sleep(2.5)
             
         elif choice == "7":
             clear_screen()
