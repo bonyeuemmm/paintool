@@ -405,7 +405,7 @@ if __name__ == "__main__":
             
         elif choice == "6":
             clear_screen()
-            print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX ===\033[0m")
+            print("\033[1;35m=== ĐĂNG NHẬP COOKIE ROBLOX (DEEP CLEAN ENGINE) ===\033[0m")
             ROBLOX_CREDENTIALS = input("Nhập thông tin (user name|mật khẩu|cookie hoặc chỉ dán cookie) (Để trống để thoát): ").strip()
             if not ROBLOX_CREDENTIALS:
                 continue
@@ -424,13 +424,10 @@ if __name__ == "__main__":
 
                 cookie_val = cookie_val.strip()
                 
-                print(f"\033[1;33m[*] Đang tắt hoàn toàn ứng dụng {target_pkg}...\033[0m")
+                print(f"\033[1;33m[*] Tắt hoàn toàn {target_pkg}...\033[0m")
                 close_game(target_pkg)
                 time.sleep(1)
 
-                prefs_dir = f"/data/data/{target_pkg}/shared_prefs"
-                prefs_path = f"{prefs_dir}/com.roblox.robloxmobile.xml"
-                
                 app_uid = run_cmd(["su", "-c", f"stat -c '%u:%g' /data/data/{target_pkg}"])
                 if not app_uid or ":" not in app_uid:
                     app_uid = run_cmd(["su", "-c", f"dumpsys package {target_pkg} | grep userId="])
@@ -440,6 +437,14 @@ if __name__ == "__main__":
                     else:
                         app_uid = ""
 
+                print("\033[1;33m[*] Dọn dẹp session cũ...\033[0m")
+                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_webview/Default/*"])
+                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_webview/Local\\ Storage/*"])
+                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_textures/*"])
+                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/cache/*"])
+
+                prefs_dir = f"/data/data/{target_pkg}/shared_prefs"
+                prefs_path = f"{prefs_dir}/com.roblox.robloxmobile.xml"
                 run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
                 run_cmd(["su", "-c", f"rm -f {prefs_path}"])
                 
@@ -448,6 +453,7 @@ if __name__ == "__main__":
     <boolean name="IsLoggedIn" value="true" />
     <string name="ROBLOSECURITY">{cookie_val}</string>
     <string name="GuestData">{cookie_val}</string>
+    <string name="RobloxAnalyticsSessionId">{random.randint(100000000, 999999999)}</string>
 </map>'''
                 
                 temp_xml = "/sdcard/temp_roblox_cookie.xml"
@@ -455,10 +461,8 @@ if __name__ == "__main__":
                     f.write(xml_content)
                 
                 run_cmd(["su", "-c", f"cp {temp_xml} {prefs_path}"])
-                
                 if app_uid:
                     run_cmd(["su", "-c", f"chown -R {app_uid} {prefs_dir}"])
-                
                 run_cmd(["su", "-c", f"chmod 777 {prefs_dir}"])
                 run_cmd(["su", "-c", f"chmod 666 {prefs_path}"])
                 run_cmd(["su", "-c", f"restorecon -R {prefs_dir}"])
@@ -473,8 +477,10 @@ if __name__ == "__main__":
                 
                 conn = sqlite3.connect(temp_db)
                 cursor = conn.cursor()
+                cursor.execute("PRAGMA user_version = 18;")
+                
                 cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS cookies (
+                    CREATE TABLE cookies (
                         creation_utc INTEGER NOT NULL,
                         host_key TEXT NOT NULL,
                         top_level_site TEXT NOT NULL,
@@ -500,14 +506,13 @@ if __name__ == "__main__":
                 epoch_now = int(t.time() * 1000000 + 11644473600000000)
                 epoch_expires = int((t.time() + 31536000) * 1000000 + 11644473600000000)
                 
-                cursor.execute(
-                    "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (epoch_now, ".roblox.com", "", ".ROBLOSECURITY", cookie_val, "/", epoch_expires, 1, 1, epoch_now, 1, 1, 1, 0, 2, 443, 0, epoch_now)
-                )
-                cursor.execute(
-                    "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (epoch_now, "roblox.com", "", ".ROBLOSECURITY", cookie_val, "/", epoch_expires, 1, 1, epoch_now, 1, 1, 1, 0, 2, 443, 0, epoch_now)
-                )
+                hosts = [".roblox.com", "roblox.com", ".www.roblox.com", "www.roblox.com", "web.roblox.com", ".web.roblox.com"]
+                for h in hosts:
+                    cursor.execute(
+                        "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (epoch_now, h, "", ".ROBLOSECURITY", cookie_val, "/", epoch_expires, 1, 1, epoch_now, 1, 1, 1, 0, 2, 443, 0, epoch_now)
+                    )
+                
                 conn.commit()
                 conn.close()
                 
@@ -523,14 +528,14 @@ if __name__ == "__main__":
                 if os.path.exists(temp_db):
                     os.remove(temp_db)
                 
-                print(f"\033[1;32m[+] Đã tiêm Cookie hoàn tất vào Shared Preferences và Webview Database cho {target_pkg}!\033[0m")
-                print(f"\033[1;36m[*] Đang mở ứng dụng...\033[0m")
+                print(f"\033[1;32m[+] Hoàn tất tiêm Cookie nâng cao cho {target_pkg}!\033[0m")
+                print(f"\033[1;36m[*] Đang khởi chạy ứng dụng...\033[0m")
                 time.sleep(1)
                 
                 open_game(target_pkg)
                 
             except Exception as e:
-                print(f"\033[1;31m[-] Lỗi trong quá trình tiêm cookie: {str(e)}\033[0m")
+                print(f"\033[1;31m[-] Lỗi tiêm cookie: {str(e)}\033[0m")
             time.sleep(2)
             
         elif choice == "7":
