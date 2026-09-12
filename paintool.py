@@ -1,4 +1,3 @@
-name=paintool.py
 import os
 import sys
 import time
