@@ -9,7 +9,7 @@ import threading
 import sqlite3
 from datetime import datetime
 
-VERSION = "v1.1.0"
+VERSION = "v1.1.2"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -149,23 +149,29 @@ def handle_send_text():
         
     discord_id = input("Nhập ID tài khoản Discord để ping (Để trống để bỏ qua): ").strip()
     
-    ping_text = f"chào bạn <@{discord_id}>" if discord_id else "chào bạn"
-    current_time_str = datetime.now().strftime("%d:%m %H:%M")
+    ping_text = f"<@{discord_id}>" if discord_id else None
+    now = datetime.now()
+    time_str = now.strftime("%H:%M")
+    footer_text = f"MADE BY PAIN | hôm nay lúc {time_str}"
+    
+    description_text = f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n{content_input}\n\n⏱️ **Thời gian đã gửi:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
     
     embed_data = {
         "username": "Pain REJOIN VIP",
         "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-        "content": ping_text,
         "embeds": [
             {
-                "description": f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n{content_input}",
+                "description": description_text,
                 "footer": {
-                    "text": f"MADE BY PAIN | {current_time_str}"
+                    "text": footer_text
                 },
                 "color": 65280
             }
         ]
     }
+    
+    if ping_text:
+        embed_data["content"] = ping_text
     
     try:
         payload = json.dumps(embed_data)
