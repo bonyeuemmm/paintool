@@ -7,7 +7,7 @@ import random
 import string
 import threading
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 VERSION = "v1.1.2"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
@@ -150,9 +150,23 @@ def handle_send_text():
     discord_id = input("Nhập ID tài khoản Discord để ping (Để trống để bỏ qua): ").strip()
     
     ping_text = f"<@{discord_id}>" if discord_id else None
+    
     now = datetime.now()
+    today_date = now.date()
+    msg_date = now.date()
     time_str = now.strftime("%H:%M")
-    footer_text = f"MADE BY PAIN | hôm nay lúc {time_str}"
+    
+    delta_days = (today_date - msg_date).days
+    if delta_days == 0:
+        time_display_str = f"hôm nay lúc {time_str}"
+    elif delta_days == 1:
+        time_display_str = f"hôm qua lúc {time_str}"
+    elif msg_date.year == today_date.year:
+        time_display_str = f"{msg_date.strftime('%d/%m')} lúc {time_str}"
+    else:
+        time_display_str = f"{msg_date.strftime('%d/%m/%Y')} lúc {time_str}"
+        
+    footer_text = f"MADE BY PAIN | {time_display_str}"
     
     user_info_str = f"<@{discord_id}>" if discord_id else "❌ người dùng không xác định"
     
