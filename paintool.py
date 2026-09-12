@@ -154,7 +154,14 @@ def handle_send_text():
     time_str = now.strftime("%H:%M")
     footer_text = f"MADE BY PAIN | hôm nay lúc {time_str}"
     
-    description_text = f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n{content_input}\n\n⏱️ **Thời gian đã gửi:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+    user_info_str = f"<@{discord_id}>" if discord_id else "❌ người dùng không xác định"
+    
+    description_text = (
+        f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
+        f"{content_input}\n\n"
+        f"👤 **Thông tin ID người dùng:** {user_info_str}\n"
+        f"⏱️ **Thời gian đã gửi:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+    )
     
     embed_data = {
         "username": "Pain REJOIN VIP",
