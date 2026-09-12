@@ -279,12 +279,11 @@ def start_tool():
         time.sleep(1)
         return
 
-def inject_cookie_fixed(target_pkg, raw_cookie):
+def inject_cookie_v2(target_pkg, raw_cookie):
     run_cmd(["su", "-c", "setenforce 0"])
     close_game(target_pkg)
     time.sleep(1)
 
-    # Làm sạch chuỗi cookie
     cookie_val = raw_cookie.strip()
     if "_|WARNING" in cookie_val:
         idx = cookie_val.find("_|WARNING")
@@ -292,45 +291,53 @@ def inject_cookie_fixed(target_pkg, raw_cookie):
     cookie_val = cookie_val.split()[0].replace('"', '').replace("'", "").strip()
 
     if not cookie_val.startswith("_|WARNING"):
-        print("\033[1;31m[-] Lỗi: Định dạng Cookie không chính xác (Thiếu _|WARNING)!\033[0m")
+        print("\033[1;31m[-] Lỗi: Cookie thiếu chuỗi _|WARNING!\033[0m")
         return False
 
-    app_data_path = f"/data/data/{target_pkg}"
+    app_data = f"/data/data/{target_pkg}"
     
-    # 1. Ghi File XML Shared_Prefs
-    prefs_dir = f"{app_data_path}/shared_prefs"
-    prefs_file = f"{prefs_dir}/com.roblox.robloxmobile.xml"
+    # Lấy UID hệ thống của Package Roblox
+    uid_str = run_cmd(["su", "-c", f"stat -c %u {app_data}"])
+    if not uid_str.isdigit():
+        uid_str = "10000"
+    uid = int(uid_str)
+
+    # 1. Tạo file Shared Preferences với định danh nâng cao
+    prefs_dir = f"{app_data}/shared_prefs"
+    run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
     
-    xml_data = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+    xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
 <map>
     <boolean name="IsLoggedIn" value="true" />
     <string name="ROBLOSECURITY">{cookie_val}</string>
     <string name="GuestData">{cookie_val}</string>
     <string name="AppSessionId">{random.randint(100000000, 999999999)}</string>
-    <boolean name="PerformCentralizedLogin" value="true" />
+    <boolean name="PerformCentralizedLogin" value="false" />
+    <string name="RBXSessionInfo">logged_in</string>
 </map>'''
 
-    tmp_xml = "/sdcard/pain_tmp.xml"
-    with open(tmp_xml, "w", encoding="utf-8") as f:
-        f.write(xml_data)
+    tmp_xml = "/sdcard/pain_prefs.xml"
+    with open(tmp_xml, "w") as f:
+        f.write(xml_content)
 
-    run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
-    run_cmd(["su", "-c", f"cp {tmp_xml} {prefs_file}"])
-    run_cmd(["su", "-c", f"chmod 777 {prefs_file}"])
+    xml_target = f"{prefs_dir}/{target_pkg}_preferences.xml"
+    xml_default = f"{prefs_dir}/com.roblox.robloxmobile.xml"
 
-    # 2. Tạo SQLite Webview Cookies DB
-    net_dir = f"{app_data_path}/app_webview/Default/Network"
-    db_file = f"{net_dir}/Cookies"
-    
+    run_cmd(["su", "-c", f"cp {tmp_xml} {xml_target}"])
+    run_cmd(["su", "-c", f"cp {tmp_xml} {xml_default}"])
+
+    # 2. Xử lý WebView Cookie Engine (Cấu trúc mới)
+    webview_dir = f"{app_data}/app_webview/Default"
+    net_dir = f"{webview_dir}/Network"
     run_cmd(["su", "-c", f"mkdir -p {net_dir}"])
-    
+
+    db_path = f"{net_dir}/Cookies"
     tmp_db = "/sdcard/pain_cookies.db"
     if os.path.exists(tmp_db):
         os.remove(tmp_db)
 
     conn = sqlite3.connect(tmp_db)
     cur = conn.cursor()
-    
     cur.execute("PRAGMA user_version = 18;")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cookies (
@@ -355,23 +362,26 @@ def inject_cookie_fixed(target_pkg, raw_cookie):
         )
     """)
 
-    now_utc = int((time.time() + 11644473600) * 1000000)
-    exp_utc = int((time.time() + 31536000 + 11644473600) * 1000000)
+    now = int((time.time() + 11644473600) * 1000000)
+    exp = int((time.time() + 31536000 + 11644473600) * 1000000)
 
-    domains = [".roblox.com", "roblox.com", ".www.roblox.com", "web.roblox.com"]
+    # Nạp Cookie vào tất cảSubdomains của Roblox
+    domains = [".roblox.com", "roblox.com", ".www.roblox.com", "web.roblox.com", "api.roblox.com"]
     for d in domains:
         cur.execute(
             "INSERT INTO cookies VALUES (?, ?, '', '.ROBLOSECURITY', ?, '/', ?, 1, 1, ?, 1, 1, 1, 0, 2, 443, 0, ?)",
-            (now_utc, d, cookie_val, exp_utc, now_utc, now_utc)
+            (now, d, cookie_val, exp, now, now)
         )
 
     conn.commit()
     conn.close()
 
-    run_cmd(["su", "-c", f"cp {tmp_db} {db_file}"])
-    run_cmd(["su", "-c", f"chmod 777 {db_file}"])
-    run_cmd(["su", "-c", f"chmod 777 {net_dir}"])
-    run_cmd(["su", "-c", f"restorecon -R {app_data_path}"])
+    run_cmd(["su", "-c", f"cp {tmp_db} {db_path}"])
+
+    # 3. Phân quyền chặt chẽ theo UID app để Android không xóa file
+    run_cmd(["su", "-c", f"chown -R {uid}:{uid} {app_data}"])
+    run_cmd(["su", "-c", f"chmod -R 777 {app_data}"])
+    run_cmd(["su", "-c", f"restorecon -R {app_data}"])
 
     if os.path.exists(tmp_xml): os.remove(tmp_xml)
     if os.path.exists(tmp_db): os.remove(tmp_db)
@@ -394,7 +404,7 @@ def show_banner():
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Tự động tiêm vào App)\033[0m")
+    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Tiêm V2 Fix)\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -500,7 +510,7 @@ if __name__ == "__main__":
             
         elif choice == "6":
             clear_screen()
-            print("\033[1;35m=== ĐĂNG NHẬP COOKIE TỪ FILE TXT ===\033[0m")
+            print("\033[1;35m=== ĐĂNG NHẬP COOKIE TỪ FILE TXT (FIX V2) ===\033[0m")
             filename_input = input("Nhập tên file (VD: cookie.txt): ").strip()
             
             if not filename_input:
@@ -537,13 +547,13 @@ if __name__ == "__main__":
             if not target_pkg:
                 target_pkg = "com.roblox.client"
 
-            print(f"\033[1;33m[*] Đang ép Cookie vào {target_pkg}...\033[0m")
-            success = inject_cookie_fixed(target_pkg, raw_cookie)
+            print(f"\033[1;33m[*] Đang tiến hành tiêm Cookie V2 vào {target_pkg}...\033[0m")
+            success = inject_cookie_v2(target_pkg, raw_cookie)
             
             if success:
-                print(f"\033[1;32m[+] Tiêm Cookie thành công tuyệt đối!\033[0m")
-                print(f"\033[1;36m[*] Đang mở Game để nhận nick...\033[0m")
-                time.sleep(1)
+                print(f"\033[1;32m[+] Ép Cookie thành công!\033[0m")
+                print(f"\033[1;36m[*] Đang mở Game để đồng bộ tài khoản...\033[0m")
+                time.sleep(1.5)
                 open_game(target_pkg)
             else:
                 print("\033[1;31m[-] Thất bại! File không chứa chuỗi Cookie hợp lệ.\033[0m")
