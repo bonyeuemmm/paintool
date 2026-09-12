@@ -7,7 +7,9 @@ import random
 import string
 import threading
 import sqlite3
+from datetime import datetime
 
+VERSION = "v1.1.0"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -16,6 +18,7 @@ TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
 WEBHOOK_URL = ""
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
+CUSTOM_SEND_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5oitBIvUXLeYB7phyO-dHkf7NTyuBsqBeQJq2emcyFYTk1ll0dl5-uqg-bhDiINmYV"
 
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
@@ -87,7 +90,7 @@ def authenticate():
     while True:
         clear_screen()
         print("\033[1;35m==================================================\033[0m")
-        print("\033[1;37m          PAIN TOOL REJOIN VIP - XÁC THỰC         \033[0m")
+        print(f"\033[1;37m       PAIN TOOL REJOIN VIP ({VERSION}) - XÁC THỰC       \033[0m")
         print("\033[1;35m==================================================\033[0m")
         print(f"\033[1;36m HWID hiện tại: {hwid}\033[0m")
         input_key = input("Nhập Key (0 để thoát): ").strip()
@@ -135,6 +138,48 @@ def send_webhook(message, with_image=False):
     except Exception:
         pass
 
+def handle_send_text():
+    clear_screen()
+    print("\033[1;35m=== SEND TEXT TO DISCORD ===\033[0m")
+    content_input = input("Nhập nội dung muốn gửi: ").strip()
+    if not content_input:
+        print("\033[1;31m[-] Nội dung không được để trống!\033[0m")
+        time.sleep(1.5)
+        return
+        
+    discord_id = input("Nhập ID tài khoản Discord để ping (Để trống để bỏ qua): ").strip()
+    
+    ping_text = f"chào bạn <@{discord_id}>" if discord_id else "chào bạn"
+    current_time_str = datetime.now().strftime("%d:%m %H:%M")
+    
+    embed_data = {
+        "username": "Pain REJOIN VIP",
+        "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+        "content": ping_text,
+        "embeds": [
+            {
+                "description": f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n{content_input}",
+                "footer": {
+                    "text": f"MADE BY PAIN | {current_time_str}"
+                },
+                "color": 65280
+            }
+        ]
+    }
+    
+    try:
+        payload = json.dumps(embed_data)
+        run_cmd([
+            "curl", "-s", "-X", "POST", CUSTOM_SEND_WEBHOOK,
+            "-H", "Content-Type: application/json",
+            "-d", payload
+        ])
+        print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
+    except Exception as e:
+        print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
+        
+    time.sleep(2)
+
 def get_all_packages():
     output = run_cmd(["pm", "list", "packages"])
     packages = []
@@ -180,7 +225,7 @@ def start_tool():
     clear_screen()
     packages = get_all_packages()
     
-    print("\033[1;37m[+] PAIN TOOL REJOIN VIP Đang chạy...\033[0m")
+    print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter bất cứ lúc nào để ngừng Start.\033[0m")
     print("--------------------------------------------------")
@@ -189,7 +234,7 @@ def start_tool():
         open_game(pkg)
         time.sleep(2)
 
-    send_webhook(f"[PAIN TOOL] Bắt đầu theo dõi {len(packages)} tab. Auto Rejoin Mode: {AUTO_REJOIN_MODE}")
+    send_webhook(f"[PAIN TOOL {VERSION}] Bắt đầu theo dõi {len(packages)} tab. Auto Rejoin Mode: {AUTO_REJOIN_MODE}")
 
     start_time = time.time()
     last_webhook_time = time.time()
@@ -262,7 +307,7 @@ def start_tool():
                     run_cmd(["logcat", "-c"])
 
             if (current_time - last_webhook_time) >= 300:
-                send_webhook("[PAIN TOOL] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
+                send_webhook(f"[PAIN TOOL {VERSION}] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
                 last_webhook_time = current_time
 
             for _ in range(4):
@@ -279,80 +324,12 @@ def start_tool():
         time.sleep(1)
         return
 
-def inject_cookie_v2(target_pkg, raw_cookie):
-    run_cmd(["su", "-c", "setenforce 0"])
-    close_game(target_pkg)
-    time.sleep(1)
-
-    cookie_val = raw_cookie.strip()
-    if "_|WARNING" in cookie_val:
-        idx = cookie_val.find("_|WARNING")
-        cookie_val = cookie_val[idx:]
-    cookie_val = cookie_val.split()[0].replace('"', '').replace("'", "").strip()
-
-    if not cookie_val.startswith("_|WARNING"):
-        print("\033[1;31m[-] Lỗi: Cookie thiếu chuỗi _|WARNING!\033[0m")
-        return False
-
-    app_data = f"/data/data/{target_pkg}"
-    
-    check_exist = run_cmd(["su", "-c", f"test -d {app_data} && echo 1"])
-    if check_exist != "1":
-        print(f"\033[1;31m[-] Không tìm thấy thư mục dữ liệu của {target_pkg}. Hãy mở game ít nhất 1 lần trước khi tiêm!\033[0m")
-        return False
-
-    uid_str = run_cmd(["su", "-c", f"stat -c %u {app_data}"])
-    uid = int(uid_str) if uid_str.isdigit() else 10000
-
-    prefs_dir = f"{app_data}/shared_prefs"
-    run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
-    
-    xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
-<map>
-    <boolean name="IsLoggedIn" value="true" />
-    <string name="ROBLOSECURITY">{cookie_val}</string>
-    <string name="GuestData">{cookie_val}</string>
-    <string name="AppSessionId">{random.randint(100000000, 999999999)}</string>
-    <boolean name="PerformCentralizedLogin" value="false" />
-    <string name="RBXSessionInfo">logged_in</string>
-</map>'''
-
-    tmp_xml = "/sdcard/pain_prefs.xml"
-    try:
-        with open(tmp_xml, "w", encoding="utf-8") as f:
-            f.write(xml_content)
-    except Exception as e:
-        print(f"[-] Lỗi ghi file tạm: {e}")
-        return False
-
-    xml_targets = [
-        f"{prefs_dir}/{target_pkg}_preferences.xml",
-        f"{prefs_dir}/com.roblox.robloxmobile.xml",
-        f"{prefs_dir}/RBXAuthentication.xml"
-    ]
-
-    for xt in xml_targets:
-        run_cmd(["su", "-c", f"cp {tmp_xml} {xt}"])
-
-    webview_cookie_path = f"{app_data}/app_webview/Default/Cookies"
-    if run_cmd(["su", "-c", f"test -f {webview_cookie_path} && echo 1"]) == "1":
-        run_cmd(["su", "-c", f"rm -f {webview_cookie_path}"])
-
-    run_cmd(["su", "-c", f"chown -R {uid}:{uid} {app_data}"])
-    run_cmd(["su", "-c", f"chmod -R 777 {app_data}"])
-    
-    if os.path.exists(tmp_xml):
-        os.remove(tmp_xml)
-        
-    print("\033[1;32m[+] Đã ghi đè Shared Preferences và cấu hình Cookie thành công!\033[0m")
-    return True
-
 def show_banner():
     clear_screen()
     rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
     print("\033[1;35m==================================================\033[0m")
-    print("\033[1;37m             PAIN TOOL REJOIN VIP                 \033[0m")
+    print(f"\033[1;37m        PAIN TOOL REJOIN VIP ({VERSION})          \033[0m")
     print("\033[1;35m==================================================\033[0m")
     print(f"\033[1;35m Package Prefix  :\033[0m \033[1;37m{PACKAGE_PREFIX}\033[0m")
     print(f"\033[1;35m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
@@ -364,10 +341,10 @@ def show_banner():
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Tiêm V2 Fix)\033[0m")
-    print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
-    print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
-    print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
+    print("\033[1;35m[6]\033[0m \033[1;37mXóa cache\033[0m")
+    print("\033[1;35m[7]\033[0m \033[1;37mImport auto execute\033[0m")
+    print("\033[1;35m[8]\033[0m \033[1;37mMở tab clone\033[0m")
+    print("\033[1;35m[9]\033[0m \033[1;37mSEND TEXT\033[0m")
     print("\033[1;31m[0] Exit\033[0m")
     print("\033[1;35m==================================================\033[0m")
 
@@ -465,61 +442,10 @@ if __name__ == "__main__":
             WEBHOOK_URL = url
             if WEBHOOK_URL:
                 print("\033[1;32m[+] Đã lưu! Đang gửi tin nhắn test...\033[0m")
-                send_webhook("Mới kích hoạt và gửi đến discord.")
+                send_webhook(f"[PAIN TOOL {VERSION}] Mới kích hoạt và gửi đến discord.")
             time.sleep(1.5)
             
         elif choice == "6":
-            clear_screen()
-            print("\033[1;35m=== ĐĂNG NHẬP COOKIE TỪ FILE TXT (FIX V2) ===\033[0m")
-            filename_input = input("Nhập tên file (VD: cookie.txt): ").strip()
-            
-            if not filename_input:
-                continue
-
-            possible_paths = [
-                f"/sdcard/Download/{filename_input}",
-                f"/storage/emulated/0/Download/{filename_input}",
-                f"/sdcard/{filename_input}",
-                f"/storage/emulated/0/{filename_input}"
-            ]
-            
-            file_path = ""
-            for p in possible_paths:
-                if os.path.exists(p):
-                    file_path = p
-                    break
-
-            if not file_path:
-                print(f"\033[1;31m[-] Không tìm thấy file '{filename_input}' trong Download!\033[0m")
-                time.sleep(2.5)
-                continue
-
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    raw_cookie = f.read().strip()
-                print(f"\033[1;32m[+] Đã đọc file: {file_path}\033[0m")
-            except Exception as fe:
-                print(f"\033[1;31m[-] Lỗi đọc file: {str(fe)}\033[0m")
-                time.sleep(2)
-                continue
-                
-            target_pkg = input("Nhập package name (Để trống dùng mặc định 'com.roblox.client'): ").strip()
-            if not target_pkg:
-                target_pkg = "com.roblox.client"
-
-            print(f"\033[1;33m[*] Đang tiến hành tiêm Cookie V2 vào {target_pkg}...\033[0m")
-            success = inject_cookie_v2(target_pkg, raw_cookie)
-            
-            if success:
-                print(f"\033[1;32m[+] Ép Cookie thành công!\033[0m")
-                print(f"\033[1;36m[*] Đang mở Game để đồng bộ tài khoản...\033[0m")
-                time.sleep(1.5)
-                open_game(target_pkg)
-            else:
-                print("\033[1;31m[-] Thất bại! File không chứa chuỗi Cookie hợp lệ.\033[0m")
-            time.sleep(3)
-            
-        elif choice == "7":
             clear_screen()
             print("\033[1;35m=== XÓA CACHE TẤT CẢ GAME ===\033[0m")
             packages = get_all_packages()
@@ -529,7 +455,7 @@ if __name__ == "__main__":
             print("\033[1;32m[+] Hoàn tất dọn dẹp!\033[0m")
             time.sleep(2)
             
-        elif choice == "8":
+        elif choice == "7":
             clear_screen()
             print("\033[1;35m=== IMPORT AUTO EXECUTE ===\033[0m")
             script_data = input("Nhập script hack (Để trống để thoát): ").strip()
@@ -583,7 +509,7 @@ if __name__ == "__main__":
             print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
             time.sleep(2.5)
                 
-        elif choice == "9":
+        elif choice == "8":
             clear_screen()
             print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
             print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
@@ -609,6 +535,9 @@ if __name__ == "__main__":
                 time.sleep(1.5)
             print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
             time.sleep(2)
+
+        elif choice == "9":
+            handle_send_text()
             
         elif choice == "0":
             print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
