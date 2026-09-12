@@ -6,8 +6,6 @@ import json
 import random
 import string
 import threading
-import urllib.parse
-import urllib.request
 import sqlite3
 
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
@@ -17,7 +15,6 @@ PACKAGE_PREFIX = "com.roblox"
 TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
 WEBHOOK_URL = ""
-ROBLOX_CREDENTIALS = ""
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 AUTO_REJOIN_MODE = 1
@@ -52,7 +49,6 @@ def check_license_curl(key, hwid):
             "-d", payload,
             "--connect-timeout", "10"
         ])
-        
         if not res_text:
             return False, "Không kết nối được server"
 
@@ -248,7 +244,7 @@ def start_tool():
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
-                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang tiến hành thoát game và đóng đa nhiệm...\033[0m")
+                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang tiến hành đóng đa nhiệm...\033[0m")
                     
                     run_cmd(["input", "keyevent", "3"])
                     time.sleep(2)
@@ -283,6 +279,104 @@ def start_tool():
         time.sleep(1)
         return
 
+def inject_cookie_fixed(target_pkg, raw_cookie):
+    run_cmd(["su", "-c", "setenforce 0"])
+    close_game(target_pkg)
+    time.sleep(1)
+
+    # Làm sạch chuỗi cookie
+    cookie_val = raw_cookie.strip()
+    if "_|WARNING" in cookie_val:
+        idx = cookie_val.find("_|WARNING")
+        cookie_val = cookie_val[idx:]
+    cookie_val = cookie_val.split()[0].replace('"', '').replace("'", "").strip()
+
+    if not cookie_val.startswith("_|WARNING"):
+        print("\033[1;31m[-] Lỗi: Định dạng Cookie không chính xác (Thiếu _|WARNING)!\033[0m")
+        return False
+
+    app_data_path = f"/data/data/{target_pkg}"
+    
+    # 1. Ghi File XML Shared_Prefs
+    prefs_dir = f"{app_data_path}/shared_prefs"
+    prefs_file = f"{prefs_dir}/com.roblox.robloxmobile.xml"
+    
+    xml_data = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="IsLoggedIn" value="true" />
+    <string name="ROBLOSECURITY">{cookie_val}</string>
+    <string name="GuestData">{cookie_val}</string>
+    <string name="AppSessionId">{random.randint(100000000, 999999999)}</string>
+    <boolean name="PerformCentralizedLogin" value="true" />
+</map>'''
+
+    tmp_xml = "/sdcard/pain_tmp.xml"
+    with open(tmp_xml, "w", encoding="utf-8") as f:
+        f.write(xml_data)
+
+    run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
+    run_cmd(["su", "-c", f"cp {tmp_xml} {prefs_file}"])
+    run_cmd(["su", "-c", f"chmod 777 {prefs_file}"])
+
+    # 2. Tạo SQLite Webview Cookies DB
+    net_dir = f"{app_data_path}/app_webview/Default/Network"
+    db_file = f"{net_dir}/Cookies"
+    
+    run_cmd(["su", "-c", f"mkdir -p {net_dir}"])
+    
+    tmp_db = "/sdcard/pain_cookies.db"
+    if os.path.exists(tmp_db):
+        os.remove(tmp_db)
+
+    conn = sqlite3.connect(tmp_db)
+    cur = conn.cursor()
+    
+    cur.execute("PRAGMA user_version = 18;")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS cookies (
+            creation_utc INTEGER NOT NULL,
+            host_key TEXT NOT NULL,
+            top_level_site TEXT NOT NULL,
+            name TEXT NOT NULL,
+            value TEXT NOT NULL,
+            path TEXT NOT NULL,
+            expires_utc INTEGER NOT NULL,
+            is_secure INTEGER NOT NULL,
+            is_httponly INTEGER NOT NULL,
+            last_access_utc INTEGER NOT NULL,
+            has_expires INTEGER NOT NULL,
+            is_persistent INTEGER NOT NULL,
+            priority INTEGER NOT NULL,
+            samesite INTEGER NOT NULL,
+            source_scheme INTEGER NOT NULL,
+            source_port INTEGER NOT NULL,
+            is_same_party INTEGER NOT NULL DEFAULT 0,
+            last_update_utc INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+
+    now_utc = int((time.time() + 11644473600) * 1000000)
+    exp_utc = int((time.time() + 31536000 + 11644473600) * 1000000)
+
+    domains = [".roblox.com", "roblox.com", ".www.roblox.com", "web.roblox.com"]
+    for d in domains:
+        cur.execute(
+            "INSERT INTO cookies VALUES (?, ?, '', '.ROBLOSECURITY', ?, '/', ?, 1, 1, ?, 1, 1, 1, 0, 2, 443, 0, ?)",
+            (now_utc, d, cookie_val, exp_utc, now_utc, now_utc)
+        )
+
+    conn.commit()
+    conn.close()
+
+    run_cmd(["su", "-c", f"cp {tmp_db} {db_file}"])
+    run_cmd(["su", "-c", f"chmod 777 {db_file}"])
+    run_cmd(["su", "-c", f"chmod 777 {net_dir}"])
+    run_cmd(["su", "-c", f"restorecon -R {app_data_path}"])
+
+    if os.path.exists(tmp_xml): os.remove(tmp_xml)
+    if os.path.exists(tmp_db): os.remove(tmp_db)
+    return True
+
 def show_banner():
     clear_screen()
     rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
@@ -300,7 +394,7 @@ def show_banner():
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
     print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Tự động tìm trong Download)\033[0m")
+    print("\033[1;35m[6]\033[0m \033[1;37mĐọc Cookie từ File TXT (Tự động tiêm vào App)\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[9]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -407,7 +501,7 @@ if __name__ == "__main__":
         elif choice == "6":
             clear_screen()
             print("\033[1;35m=== ĐĂNG NHẬP COOKIE TỪ FILE TXT ===\033[0m")
-            filename_input = input("Nhập tên file của bạn (Ví dụ: cookie.txt): ").strip()
+            filename_input = input("Nhập tên file (VD: cookie.txt): ").strip()
             
             if not filename_input:
                 continue
@@ -426,189 +520,34 @@ if __name__ == "__main__":
                     break
 
             if not file_path:
-                print(f"\033[1;31m[-] Không tìm thấy file '{filename_input}' trong thư mục Download hoặc bộ nhớ chính!\033[0m")
-                print("\033[1;33m[*] Hãy chắc chắn bạn đã đặt file trong thư mục Download.\033[0m")
-                time.sleep(3)
+                print(f"\033[1;31m[-] Không tìm thấy file '{filename_input}' trong Download!\033[0m")
+                time.sleep(2.5)
                 continue
 
             try:
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    raw_input_data = f.read().strip()
-                print(f"\033[1;32m[+] Đã tìm thấy và đọc file thành công tại: {file_path}\033[0m")
+                    raw_cookie = f.read().strip()
+                print(f"\033[1;32m[+] Đã đọc file: {file_path}\033[0m")
             except Exception as fe:
                 print(f"\033[1;31m[-] Lỗi đọc file: {str(fe)}\033[0m")
                 time.sleep(2)
                 continue
                 
-            target_pkg = input("Nhập package name cần đăng nhập (Ví dụ: com.roblox.client): ").strip()
+            target_pkg = input("Nhập package name (Để trống dùng mặc định 'com.roblox.client'): ").strip()
             if not target_pkg:
-                continue
+                target_pkg = "com.roblox.client"
 
-            try:
-                cookie_val = ""
-                if "WARNING" in raw_input_data:
-                    start_idx = raw_input_data.find("WARNING")
-                    if start_idx > 5:
-                        start_idx -= 5
-                    sub_part = raw_input_data[start_idx:]
-                    end_idx = len(sub_part)
-                    for char_idx, char in enumerate(sub_part):
-                        if char in ['\n', '\r', ' ', '"', "'", '|', ';', ',']:
-                            end_idx = char_idx
-                            break
-                    cookie_val = sub_part[:end_idx].strip()
-                    if "WARNING" in cookie_val and not cookie_val.startswith("_"):
-                        cookie_val = "_" + cookie_val.lstrip("-_ ")
-                elif "|" in raw_input_data:
-                    parts = raw_input_data.split("|")
-                    for p in parts:
-                        if "WARNING" in p or len(p.strip()) > 100:
-                            cookie_val = p.strip()
-                            break
-                    if not cookie_val and len(parts) > 0:
-                        cookie_val = parts[-1].strip()
-                else:
-                    cookie_val = raw_input_data.replace('"', '').replace("'", "").strip()
-
-                cookie_val = cookie_val.split()[0] if cookie_val else ""
-                
-                if "WARNING" not in cookie_val:
-                    print("\033[1;31m[-] Cảnh báo: File không chứa chuỗi cookie Roblox hợp lệ!\033[0m")
-                    time.sleep(2.5)
-                    continue
-
-                print("\033[1;33m[*] Đang xác thực tính hợp lệ của Cookie qua API Roblox...\033[0m")
-                try:
-                    req_auth = urllib.request.Request(
-                        "https://users.roblox.com/v1/users/authenticated",
-                        headers={
-                            "Cookie": f".ROBLOSECURITY={cookie_val}",
-                            "User-Agent": "Roblox/WinInet"
-                        }
-                    )
-                    with urllib.request.urlopen(req_auth, timeout=10) as response:
-                        user_data = json.loads(response.read().decode())
-                        username_check = user_data.get("name", "Unknown")
-                        user_id_check = user_data.get("id", "Unknown")
-                        print(f"\033[1;32m[+] Xác thực thành công tài khoản: {username_check} (ID: {user_id_check})\033[0m")
-                except Exception as api_err:
-                    print(f"\033[1;31m[-] Cookie không hợp lệ hoặc đã hết hạn (Lỗi API: {str(api_err)})\033[0m")
-                    proceed_anyway = input("Vẫn tiếp tục ép tiêm cookie này? (y/n): ").strip().lower()
-                    if proceed_anyway != 'y':
-                        continue
-
-                print(f"\033[1;33m[*] Đang đóng hoàn toàn {target_pkg}...\033[0m")
-                close_game(target_pkg)
+            print(f"\033[1;33m[*] Đang ép Cookie vào {target_pkg}...\033[0m")
+            success = inject_cookie_fixed(target_pkg, raw_cookie)
+            
+            if success:
+                print(f"\033[1;32m[+] Tiêm Cookie thành công tuyệt đối!\033[0m")
+                print(f"\033[1;36m[*] Đang mở Game để nhận nick...\033[0m")
                 time.sleep(1)
-
-                app_uid = run_cmd(["su", "-c", f"stat -c '%u:%g' /data/data/{target_pkg}"])
-                if not app_uid or ":" not in app_uid:
-                    app_uid = run_cmd(["su", "-c", f"dumpsys package {target_pkg} | grep userId="])
-                    if "=" in app_uid:
-                        uid_num = app_uid.split("=")[1].split()[0]
-                        app_uid = f"{uid_num}:{uid_num}"
-                    else:
-                        app_uid = ""
-
-                print("\033[1;33m[*] Đang xóa bộ nhớ đệm ứng dụng cũ...\033[0m")
-                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_webview/Default/*"])
-                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/app_webview/Local\\ Storage/*"])
-                run_cmd(["su", "-c", f"rm -rf /data/data/{target_pkg}/cache/*"])
-
-                prefs_dir = f"/data/data/{target_pkg}/shared_prefs"
-                prefs_path = f"{prefs_dir}/com.roblox.robloxmobile.xml"
-                run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
-                run_cmd(["su", "-c", f"rm -f {prefs_path}"])
-                
-                xml_content = f'''<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
-<map>
-    <boolean name="IsLoggedIn" value="true" />
-    <string name="ROBLOSECURITY">{cookie_val}</string>
-    <string name="GuestData">{cookie_val}</string>
-    <string name="RobloxAnalyticsSessionId">{random.randint(100000000, 999999999)}</string>
-</map>'''
-                
-                temp_xml = "/sdcard/temp_roblox_cookie.xml"
-                with open(temp_xml, "w", encoding="utf-8") as f:
-                    f.write(xml_content)
-                
-                run_cmd(["su", "-c", f"cp {temp_xml} {prefs_path}"])
-                if app_uid:
-                    run_cmd(["su", "-c", f"chown -R {app_uid} {prefs_dir}"])
-                run_cmd(["su", "-c", f"chmod 777 {prefs_dir}"])
-                run_cmd(["su", "-c", f"chmod 666 {prefs_path}"])
-                run_cmd(["su", "-c", f"restorecon -R {prefs_dir}"])
-                
-                cookies_dir = f"/data/data/{target_pkg}/app_webview/Default/Network"
-                cookies_db = f"{cookies_dir}/Cookies"
-                run_cmd(["su", "-c", f"mkdir -p {cookies_dir}"])
-                
-                temp_db = "/sdcard/temp_cookies.db"
-                if os.path.exists(temp_db):
-                    os.remove(temp_db)
-                
-                conn = sqlite3.connect(temp_db)
-                cursor = conn.cursor()
-                cursor.execute("PRAGMA user_version = 18;")
-                
-                cursor.execute("""
-                    CREATE TABLE cookies (
-                        creation_utc INTEGER NOT NULL,
-                        host_key TEXT NOT NULL,
-                        top_level_site TEXT NOT NULL,
-                        name TEXT NOT NULL,
-                        value TEXT NOT NULL,
-                        path TEXT NOT NULL,
-                        expires_utc INTEGER NOT NULL,
-                        is_secure INTEGER NOT NULL,
-                        is_httponly INTEGER NOT NULL,
-                        last_access_utc INTEGER NOT NULL,
-                        has_expires INTEGER NOT NULL,
-                        is_persistent INTEGER NOT NULL,
-                        priority INTEGER NOT NULL,
-                        samesite INTEGER NOT NULL,
-                        source_scheme INTEGER NOT NULL,
-                        source_port INTEGER NOT NULL,
-                        is_same_party INTEGER NOT NULL DEFAULT 0,
-                        last_update_utc INTEGER NOT NULL DEFAULT 0
-                    )
-                """)
-                
-                import time as t
-                epoch_now = int(t.time() * 1000000 + 11644473600000000)
-                epoch_expires = int((t.time() + 31536000) * 1000000 + 11644473600000000)
-                
-                hosts = [".roblox.com", "roblox.com", ".www.roblox.com", "www.roblox.com", "web.roblox.com", ".web.roblox.com"]
-                for h in hosts:
-                    cursor.execute(
-                        "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (epoch_now, h, "", ".ROBLOSECURITY", cookie_val, "/", epoch_expires, 1, 1, epoch_now, 1, 1, 1, 0, 2, 443, 0, epoch_now)
-                    )
-                
-                conn.commit()
-                conn.close()
-                
-                run_cmd(["su", "-c", f"cp {temp_db} {cookies_db}"])
-                if app_uid:
-                    run_cmd(["su", "-c", f"chown -R {app_uid} {cookies_dir}"])
-                run_cmd(["su", "-c", f"chmod 777 {cookies_dir}"])
-                run_cmd(["su", "-c", f"chmod 666 {cookies_db}"])
-                run_cmd(["su", "-c", f"restorecon -R {cookies_dir}"])
-                
-                if os.path.exists(temp_xml):
-                    os.remove(temp_xml)
-                if os.path.exists(temp_db):
-                    os.remove(temp_db)
-                
-                print(f"\033[1;32m[+] Tiêm Cookie thành công tuyệt đối cho gói: {target_pkg}!\033[0m")
-                print(f"\033[1;36m[*] Đang khởi động lại ứng dụng...\033[0m")
-                time.sleep(1)
-                
                 open_game(target_pkg)
-                
-            except Exception as e:
-                print(f"\033[1;31m[-] Lỗi tiêm cookie: {str(e)}\033[0m")
-            time.sleep(2.5)
+            else:
+                print("\033[1;31m[-] Thất bại! File không chứa chuỗi Cookie hợp lệ.\033[0m")
+            time.sleep(3)
             
         elif choice == "7":
             clear_screen()
@@ -671,7 +610,7 @@ if __name__ == "__main__":
             except:
                 run_cmd(["rm", temp_path])
                 
-            print("\033[1;32m[+] Đã quét và lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
+            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
             time.sleep(2.5)
                 
         elif choice == "9":
