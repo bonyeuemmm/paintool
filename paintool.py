@@ -1,3 +1,4 @@
+name=paintool.py
 import os
 import sys
 import time
@@ -294,44 +295,13 @@ def inject_cookie_v2(target_pkg, raw_cookie):
         print("\033[1;31m[-] Lỗi: Cookie thiếu chuỗi _|WARNING!\033[0m")
         return False
 
-    # Lấy Ticket Đăng Nhập Trực Tiếp Từ Roblox API bằng Cookie
-    print("\033[1;36m[*] Đang khởi tạo Auth Ticket từ Roblox API...\033[0m")
-    ticket_res = run_cmd([
-        "curl", "-s", "-X", "POST", "https://auth.roblox.com/v1/authentication-ticket",
-        "-H", f"Cookie: .ROBLOSECURITY={cookie_val}",
-        "-H", "Referer: https://www.roblox.com",
-        "-I"
-    ])
-
-    csrf_token = ""
-    for line in ticket_res.splitlines():
-        if "x-csrf-token:" in line.lower():
-            csrf_token = line.split(":", 1)[1].strip()
-            break
-
-    auth_ticket = ""
-    if csrf_token:
-        ticket_res2 = run_cmd([
-            "curl", "-s", "-X", "POST", "https://auth.roblox.com/v1/authentication-ticket",
-            "-H", f"Cookie: .ROBLOSECURITY={cookie_val}",
-            "-H", f"x-csrf-token: {csrf_token}",
-            "-H", "Referer: https://www.roblox.com",
-            "-I"
-        ])
-        for line in ticket_res2.splitlines():
-            if "rbx-authentication-ticket:" in line.lower():
-                auth_ticket = line.split(":", 1)[1].strip()
-                break
-
-    if auth_ticket:
-        print(f"\033[1;32m[+] Đã lấy Auth Ticket thành công!\033[0m")
-        login_intent = f"roblox://navigation/game?authTicket={auth_ticket}"
-        run_cmd(["su", "-c", f"am start -a android.intent.action.VIEW -d \"{login_intent}\" {target_pkg}"])
-        run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", f"\"{login_intent}\"", target_pkg])
-        return True
-
-    # Phương pháp dự phòng: Tiêm dữ liệu vào Shared Preferences theo cấu trúc mới
     app_data = f"/data/data/{target_pkg}"
+    
+    check_exist = run_cmd(["su", "-c", f"test -d {app_data} && echo 1"])
+    if check_exist != "1":
+        print(f"\033[1;31m[-] Không tìm thấy thư mục dữ liệu của {target_pkg}. Hãy mở game ít nhất 1 lần trước khi tiêm!\033[0m")
+        return False
+
     uid_str = run_cmd(["su", "-c", f"stat -c %u {app_data}"])
     uid = int(uid_str) if uid_str.isdigit() else 10000
 
@@ -349,20 +319,33 @@ def inject_cookie_v2(target_pkg, raw_cookie):
 </map>'''
 
     tmp_xml = "/sdcard/pain_prefs.xml"
-    with open(tmp_xml, "w") as f:
-        f.write(xml_content)
+    try:
+        with open(tmp_xml, "w", encoding="utf-8") as f:
+            f.write(xml_content)
+    except Exception as e:
+        print(f"[-] Lỗi ghi file tạm: {e}")
+        return False
 
-    xml_target = f"{prefs_dir}/{target_pkg}_preferences.xml"
-    xml_default = f"{prefs_dir}/com.roblox.robloxmobile.xml"
+    xml_targets = [
+        f"{prefs_dir}/{target_pkg}_preferences.xml",
+        f"{prefs_dir}/com.roblox.robloxmobile.xml",
+        f"{prefs_dir}/RBXAuthentication.xml"
+    ]
 
-    run_cmd(["su", "-c", f"cp {tmp_xml} {xml_target}"])
-    run_cmd(["su", "-c", f"cp {tmp_xml} {xml_default}"])
+    for xt in xml_targets:
+        run_cmd(["su", "-c", f"cp {tmp_xml} {xt}"])
+
+    webview_cookie_path = f"{app_data}/app_webview/Default/Cookies"
+    if run_cmd(["su", "-c", f"test -f {webview_cookie_path} && echo 1"]) == "1":
+        run_cmd(["su", "-c", f"rm -f {webview_cookie_path}"])
+
     run_cmd(["su", "-c", f"chown -R {uid}:{uid} {app_data}"])
     run_cmd(["su", "-c", f"chmod -R 777 {app_data}"])
     
     if os.path.exists(tmp_xml):
         os.remove(tmp_xml)
         
+    print("\033[1;32m[+] Đã ghi đè Shared Preferences và cấu hình Cookie thành công!\033[0m")
     return True
 
 def show_banner():
