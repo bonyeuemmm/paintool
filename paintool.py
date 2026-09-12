@@ -173,8 +173,10 @@ def handle_send_text():
     description_text = (
         f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
         f"{content_input}\n\n"
-        f"👤 **Thông tin ID người dùng:** {user_info_str}\n"
-        f"⏱️ **Thời gian đã gửi:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+        f"👤 **Thông tin ID người dùng:** 
+        {user_info_str}\n"
+        f"⏱️ **Thời gian đã gửi:** 
+        {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
     )
     
     embed_data = {
