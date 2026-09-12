@@ -294,15 +294,47 @@ def inject_cookie_v2(target_pkg, raw_cookie):
         print("\033[1;31m[-] Lỗi: Cookie thiếu chuỗi _|WARNING!\033[0m")
         return False
 
-    app_data = f"/data/data/{target_pkg}"
-    
-    # Lấy UID hệ thống của Package Roblox
-    uid_str = run_cmd(["su", "-c", f"stat -c %u {app_data}"])
-    if not uid_str.isdigit():
-        uid_str = "10000"
-    uid = int(uid_str)
+    # Lấy Ticket Đăng Nhập Trực Tiếp Từ Roblox API bằng Cookie
+    print("\033[1;36m[*] Đang khởi tạo Auth Ticket từ Roblox API...\033[0m")
+    ticket_res = run_cmd([
+        "curl", "-s", "-X", "POST", "https://auth.roblox.com/v1/authentication-ticket",
+        "-H", f"Cookie: .ROBLOSECURITY={cookie_val}",
+        "-H", "Referer: https://www.roblox.com",
+        "-I"
+    ])
 
-    # 1. Tạo file Shared Preferences với định danh nâng cao
+    csrf_token = ""
+    for line in ticket_res.splitlines():
+        if "x-csrf-token:" in line.lower():
+            csrf_token = line.split(":", 1)[1].strip()
+            break
+
+    auth_ticket = ""
+    if csrf_token:
+        ticket_res2 = run_cmd([
+            "curl", "-s", "-X", "POST", "https://auth.roblox.com/v1/authentication-ticket",
+            "-H", f"Cookie: .ROBLOSECURITY={cookie_val}",
+            "-H", f"x-csrf-token: {csrf_token}",
+            "-H", "Referer: https://www.roblox.com",
+            "-I"
+        ])
+        for line in ticket_res2.splitlines():
+            if "rbx-authentication-ticket:" in line.lower():
+                auth_ticket = line.split(":", 1)[1].strip()
+                break
+
+    if auth_ticket:
+        print(f"\033[1;32m[+] Đã lấy Auth Ticket thành công!\033[0m")
+        login_intent = f"roblox://navigation/game?authTicket={auth_ticket}"
+        run_cmd(["su", "-c", f"am start -a android.intent.action.VIEW -d \"{login_intent}\" {target_pkg}"])
+        run_cmd(["am", "start", "-a", "android.intent.action.VIEW", "-d", f"\"{login_intent}\"", target_pkg])
+        return True
+
+    # Phương pháp dự phòng: Tiêm dữ liệu vào Shared Preferences theo cấu trúc mới
+    app_data = f"/data/data/{target_pkg}"
+    uid_str = run_cmd(["su", "-c", f"stat -c %u {app_data}"])
+    uid = int(uid_str) if uid_str.isdigit() else 10000
+
     prefs_dir = f"{app_data}/shared_prefs"
     run_cmd(["su", "-c", f"mkdir -p {prefs_dir}"])
     
@@ -325,66 +357,12 @@ def inject_cookie_v2(target_pkg, raw_cookie):
 
     run_cmd(["su", "-c", f"cp {tmp_xml} {xml_target}"])
     run_cmd(["su", "-c", f"cp {tmp_xml} {xml_default}"])
-
-    # 2. Xử lý WebView Cookie Engine (Cấu trúc mới)
-    webview_dir = f"{app_data}/app_webview/Default"
-    net_dir = f"{webview_dir}/Network"
-    run_cmd(["su", "-c", f"mkdir -p {net_dir}"])
-
-    db_path = f"{net_dir}/Cookies"
-    tmp_db = "/sdcard/pain_cookies.db"
-    if os.path.exists(tmp_db):
-        os.remove(tmp_db)
-
-    conn = sqlite3.connect(tmp_db)
-    cur = conn.cursor()
-    cur.execute("PRAGMA user_version = 18;")
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS cookies (
-            creation_utc INTEGER NOT NULL,
-            host_key TEXT NOT NULL,
-            top_level_site TEXT NOT NULL,
-            name TEXT NOT NULL,
-            value TEXT NOT NULL,
-            path TEXT NOT NULL,
-            expires_utc INTEGER NOT NULL,
-            is_secure INTEGER NOT NULL,
-            is_httponly INTEGER NOT NULL,
-            last_access_utc INTEGER NOT NULL,
-            has_expires INTEGER NOT NULL,
-            is_persistent INTEGER NOT NULL,
-            priority INTEGER NOT NULL,
-            samesite INTEGER NOT NULL,
-            source_scheme INTEGER NOT NULL,
-            source_port INTEGER NOT NULL,
-            is_same_party INTEGER NOT NULL DEFAULT 0,
-            last_update_utc INTEGER NOT NULL DEFAULT 0
-        )
-    """)
-
-    now = int((time.time() + 11644473600) * 1000000)
-    exp = int((time.time() + 31536000 + 11644473600) * 1000000)
-
-    # Nạp Cookie vào tất cảSubdomains của Roblox
-    domains = [".roblox.com", "roblox.com", ".www.roblox.com", "web.roblox.com", "api.roblox.com"]
-    for d in domains:
-        cur.execute(
-            "INSERT INTO cookies VALUES (?, ?, '', '.ROBLOSECURITY', ?, '/', ?, 1, 1, ?, 1, 1, 1, 0, 2, 443, 0, ?)",
-            (now, d, cookie_val, exp, now, now)
-        )
-
-    conn.commit()
-    conn.close()
-
-    run_cmd(["su", "-c", f"cp {tmp_db} {db_path}"])
-
-    # 3. Phân quyền chặt chẽ theo UID app để Android không xóa file
     run_cmd(["su", "-c", f"chown -R {uid}:{uid} {app_data}"])
     run_cmd(["su", "-c", f"chmod -R 777 {app_data}"])
-    run_cmd(["su", "-c", f"restorecon -R {app_data}"])
-
-    if os.path.exists(tmp_xml): os.remove(tmp_xml)
-    if os.path.exists(tmp_db): os.remove(tmp_db)
+    
+    if os.path.exists(tmp_xml):
+        os.remove(tmp_xml)
+        
     return True
 
 def show_banner():
