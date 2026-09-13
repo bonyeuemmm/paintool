@@ -148,14 +148,9 @@ def handle_send_text():
             time.sleep(1)
             return
             
-        discord_id = input("Nhập UID tài khoản Discord: ").strip()
-        if not discord_id:
-            print("\033[1;31m[-] UID không được để trống!\033[0m")
-            time.sleep(1.5)
-            continue
-            
-        # Tự động tạo cấu trúc ping chuẩn Discord bằng UID
-        ping_text = f"<@{discord_id}>"
+        discord_id = input("Nhập UID tài khoản Discord (Để trống để bỏ qua): ").strip()
+        
+        ping_text = f"<@{discord_id}>" if discord_id else None
         
         now = datetime.now()
         today_date = now.date()
@@ -174,16 +169,20 @@ def handle_send_text():
             
         footer_text = f"MADE BY PAIN | {time_display_str}"
         
-        # Hiển thị thông tin người gửi với UID và tự động ping
-        name_str = f"Người dùng <@{discord_id}>"
-        ping_str = f"<@{discord_id}>"
-        uid_str = discord_id
+        if discord_id:
+            name_str = f"User_{discord_id}"
+            ping_str = f"<@{discord_id}>"
+            uid_str = discord_id
+        else:
+            name_str = "Ẩn danh"
+            ping_str = "Không có"
+            uid_str = "Không có"
         
         description_text = (
             "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
             f"{content_input}\n\n"
             "👤 Thông tin người gửi:\n"
-            f"- Tên người dùng discord: {name_str}\n"
+            f"- Tên người dùng: {name_str}\n"
             f"- Ping: {ping_str}\n"
             f"- UID: {uid_str}\n\n"
             "🕐 Thời gian gửi:\n"
@@ -193,10 +192,12 @@ def handle_send_text():
         embed_data = {
             "username": "Pain REJOIN VIP",
             "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-            "content": ping_text,  # Tự động ping ở message content để Discord thông báo
             "embeds": [
                 {
                     "description": description_text,
+                    "thumbnail": {
+                        "url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png"
+                    },
                     "footer": {
                         "text": footer_text
                     },
@@ -205,6 +206,9 @@ def handle_send_text():
             ]
         }
         
+        if ping_text:
+            embed_data["content"] = ping_text
+        
         try:
             payload = json.dumps(embed_data)
             run_cmd([
@@ -212,7 +216,7 @@ def handle_send_text():
                 "-H", "Content-Type: application/json",
                 "-d", payload
             ])
-            print("\033[1;32m[+] Đã gửi nội dung và tự động ping thành công qua Webhook!\033[0m")
+            print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
         except Exception as e:
             print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
             
@@ -537,6 +541,41 @@ if __name__ == "__main__":
                 run_cmd(["su", "-c", f"mkdir -p {target}"])
                 
                 run_cmd(["cp", temp_path, f"{target}/script.lua"])
+                run_cmd(["su", "-c", f"cp {temp_path} {target}/script.lua"])
+
+            try:
+                os.remove(temp_path)
+            except:
+                run_cmd(["rm", temp_path])
+                
+            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
+            time.sleep(2.5)
+                
+        elif choice == "8":
+            clear_screen()
+            print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
+            print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
+            
+            output = run_cmd(["pm", "list", "packages"])
+            found_pkgs = []
+            for line in output.splitlines():
+                if PACKAGE_PREFIX in line:
+                    parts = line.split(":")
+                    if len(parts) > 1:
+                        found_pkgs.append(parts[1].strip())
+            
+            if not found_pkgs:
+                print(f"\033[1;31m[-] Không tìm thấy ứng dụng nào chứa prefix: {PACKAGE_PREFIX}\033[0m")
+                print(f"\033[1;33m[*] Thử mở gói mặc định: {PACKAGE_PREFIX}\033[0m")
+                found_pkgs = [PACKAGE_PREFIX]
+            else:
+                print(f"\033[1;32m[+] Tìm thấy {len(found_pkgs)} ứng dụng!\033[0m")
+                
+            for pkg in found_pkgs:
+                print(f"[*] Đang mở: {pkg}")
+                open_game(pkg)
+                time.sleep(1.5)
+            print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
                 run_cmd(["su", "-c", f"cp {temp_path} {target}/script.lua"])
 
             try:
