@@ -148,11 +148,14 @@ def handle_send_text():
             time.sleep(1)
             return
             
-        discord_name = input("Nhập tên người dùng Discord: ").strip()
-        discord_ping = input("Nhập Ping (ví dụ @tên hoặc để trống): ").strip()
         discord_id = input("Nhập UID tài khoản Discord: ").strip()
-        
-        ping_text = f"{discord_ping}" if discord_ping else None
+        if not discord_id:
+            print("\033[1;31m[-] UID không được để trống!\033[0m")
+            time.sleep(1.5)
+            continue
+            
+        # Tự động tạo cấu trúc ping chuẩn Discord bằng UID
+        ping_text = f"<@{discord_id}>"
         
         now = datetime.now()
         today_date = now.date()
@@ -171,9 +174,10 @@ def handle_send_text():
             
         footer_text = f"MADE BY PAIN | {time_display_str}"
         
-        name_str = discord_name if discord_name else "Không có"
-        ping_str = discord_ping if discord_ping else "Không có"
-        uid_str = discord_id if discord_id else "Không có"
+        # Hiển thị thông tin người gửi với UID và tự động ping
+        name_str = f"Người dùng <@{discord_id}>"
+        ping_str = f"<@{discord_id}>"
+        uid_str = discord_id
         
         description_text = (
             "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
@@ -189,6 +193,7 @@ def handle_send_text():
         embed_data = {
             "username": "Pain REJOIN VIP",
             "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+            "content": ping_text,  # Tự động ping ở message content để Discord thông báo
             "embeds": [
                 {
                     "description": description_text,
@@ -200,9 +205,6 @@ def handle_send_text():
             ]
         }
         
-        if ping_text:
-            embed_data["content"] = ping_text
-        
         try:
             payload = json.dumps(embed_data)
             run_cmd([
@@ -210,7 +212,7 @@ def handle_send_text():
                 "-H", "Content-Type: application/json",
                 "-d", payload
             ])
-            print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
+            print("\033[1;32m[+] Đã gửi nội dung và tự động ping thành công qua Webhook!\033[0m")
         except Exception as e:
             print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
             
