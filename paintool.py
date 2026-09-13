@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.1.8-Beta"
+VERSION = "v1.1.9-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -268,16 +268,16 @@ def clear_logcat():
         run_cmd(["logcat", "-c"])
 
 def check_package_error(pkg):
-    log_output = run_cmd(["logcat", "-d", "-t", "50"], timeout=5)
+    log_output = run_cmd(["logcat", "-d", "-t", "30"], timeout=4)
     if not log_output:
         return False, None
 
-    general_keywords = ['disconnect', 'kicked', 'lost connection']
+    general_keywords = ['you have been kicked', 'disconnected from game', 'unexpected disconnection']
     for line in log_output.splitlines():
         line_lower = line.lower()
         if pkg in line_lower or "roblox" in line_lower:
             for code in ROBLOX_ERROR_CODES:
-                if f"error {code}" in line_lower or f"code: {code}" in line_lower or f"code {code}" in line_lower:
+                if f"error code: {code}" in line_lower or f"error {code}" in line_lower or f"code {code}" in line_lower:
                     return True, f"Mã Lỗi {code}"
             if any(k in line_lower for k in general_keywords):
                 return True, "Mất kết nối / Kicked"
@@ -300,6 +300,9 @@ def start_tool():
     packages = get_all_packages()
     START_UP_TIME = datetime.now()
     
+    # Lưu thời điểm vừa Rejoin của từng package để bỏ qua kiểm tra log trong 30s đầu
+    last_rejoin_time = {pkg: time.time() for pkg in packages}
+    
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
     print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
@@ -311,6 +314,7 @@ def start_tool():
     for idx, pkg in enumerate(packages):
         print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
         open_game(pkg)
+        last_rejoin_time[pkg] = time.time()
         if idx < len(packages) - 1:
             print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
             time.sleep(CLONE_LAUNCH_DELAY)
@@ -344,8 +348,13 @@ def start_tool():
                         clear_logcat()
                         time.sleep(2)
                         open_game(pkg)
-                        time.sleep(15)
+                        last_rejoin_time[pkg] = time.time()
+                        time.sleep(10)
                     else:
+                        # Bỏ qua kiểm tra lỗi nếu game mới được bật chưa quá 30 giây
+                        if time.time() - last_rejoin_time.get(pkg, 0) < 30:
+                            continue
+
                         has_error, error_msg = check_package_error(pkg)
                         if has_error:
                             print(f"\033[1;33m[-] Phát hiện {pkg} lỗi [{error_msg}]! Đang Rejoin...\033[0m")
@@ -353,7 +362,8 @@ def start_tool():
                             clear_logcat()
                             time.sleep(3)
                             open_game(pkg)
-                            time.sleep(15)
+                            last_rejoin_time[pkg] = time.time()
+                            time.sleep(10)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
@@ -365,6 +375,7 @@ def start_tool():
                     
                     for idx, pkg in enumerate(packages):
                         open_game(pkg)
+                        last_rejoin_time[pkg] = time.time()
                         if idx < len(packages) - 1:
                             time.sleep(CLONE_LAUNCH_DELAY)
                     start_time = time.time()
