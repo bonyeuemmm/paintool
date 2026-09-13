@@ -22,8 +22,15 @@ CUSTOM_SEND_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5o
 
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
+CLONE_LAUNCH_DELAY = 10  # Delay 10s giữa các tab clone
 stop_start = False
 START_UP_TIME = None
+
+# Danh sách 10 mã lỗi Roblox cần quét
+ROBLOX_ERROR_CODES = [
+    "277", "260", "279", "268", "267", 
+    "273", "278", "264", "261", "524"
+]
 
 def clear_screen():
     os.system('stty sane 2>/dev/null')
@@ -139,7 +146,7 @@ def send_webhook(message, with_image=False):
         footer_text = f"MADE BY PAIN | {time_display_str}"
         
         packages = get_all_packages()
-        rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+        rejoin_mode_str = "Quét Kick/Văng/Mã Lỗi" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
         start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
         
         description_text = (
@@ -282,6 +289,8 @@ def get_all_packages():
             parts = line.split(":")
             if len(parts) > 1:
                 packages.append(parts[1].strip())
+    # Sắp xếp danh sách package theo thứ tự
+    packages.sort()
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
@@ -296,12 +305,34 @@ def open_game(pkg):
     else:
         run_cmd(["su", "-c", f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"])
         run_cmd(["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"])
+    run_cmd(["logcat", "-c"])
 
 def close_game(pkg):
     run_cmd(["su", "-c", f"am force-stop {pkg}"])
     run_cmd(["am", "force-stop", pkg])
     run_cmd(["su", "-c", f"pkill -f {pkg}"])
     run_cmd(["su", "-c", f"killall {pkg}"])
+
+def check_package_error(pkg):
+    """Quét bộ nhớ logcat tìm chính xác mã lỗi roblox thuộc về package này"""
+    log_output = run_cmd(["logcat", "-d", "-t", "150"])
+    if not log_output:
+        return False, None
+
+    general_keywords = ['disconnect', 'kicked', 'lost connection']
+    
+    for line in log_output.splitlines():
+        line_lower = line.lower()
+        if pkg in line_lower or "roblox" in line_lower or "unity" in line_lower:
+            # Kiểm tra 10 Mã Lỗi cụ thể
+            for code in ROBLOX_ERROR_CODES:
+                if f"error {code}" in line_lower or f"code: {code}" in line_lower or f"code {code}" in line_lower or f"id={code}" in line_lower:
+                    return True, f"Mã Lỗi {code}"
+            # Kiểm tra từ khóa ngắt kết nối chung
+            if any(k in line_lower for k in general_keywords):
+                return True, "Mất kết nối / Kicked"
+                
+    return False, None
 
 def listen_for_stop():
     global stop_start
@@ -322,13 +353,19 @@ def start_tool():
     
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
+    print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter bất cứ lúc nào để ngừng Start.\033[0m")
     print("--------------------------------------------------")
     
-    for pkg in packages:
+    # Mở từng tab clone theo thứ tự với Delay 10 giây
+    for idx, pkg in enumerate(packages):
+        print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
         open_game(pkg)
-        time.sleep(2)
+        if idx < len(packages) - 1:
+            print(f"\033[1;33m[*] Đang đợi {CLONE_LAUNCH_DELAY}s để mở tab tiếp theo...\033[0m")
+            time.sleep(CLONE_LAUNCH_DELAY)
 
+    run_cmd(["logcat", "-c"])
     send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
 
     start_time = time.time()
@@ -348,6 +385,8 @@ def start_tool():
             if AUTO_REJOIN_MODE == 1:
                 for pkg in packages:
                     if stop_start: break
+                    
+                    # 1. Kiểm tra Process sống/chết
                     pid = run_cmd(["pidof", pkg])
                     is_running = False
                     
@@ -359,28 +398,18 @@ def start_tool():
                             is_running = True
 
                     if not is_running:
-                        print(f"\033[1;31m[-] {pkg} bị văng! Đang mở lại...\033[0m")
+                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang mở lại...\033[0m")
                         open_game(pkg)
-                        time.sleep(3)
+                        time.sleep(10)
                     else:
-                        log_output = run_cmd(["logcat", "-d", "-t", "200"])
-                        error_keywords = ['disconnect', 'kicked', 'lost connection', 'error 277', 'error 268']
-                        kicked = False
-                        
-                        for line in log_output.splitlines():
-                            line_lower = line.lower()
-                            if "unity" in line_lower or "roblox" in line_lower or pkg in line_lower:
-                                if any(k in line_lower for k in error_keywords):
-                                    kicked = True
-                                    break
-                                    
-                        if kicked:
-                            print(f"\033[1;33m[-] {pkg} mất kết nối! Đang rejoin...\033[0m")
+                        # 2. Kiểm tra mã lỗi trong Logcat chỉ dành cho Tab này
+                        has_error, error_msg = check_package_error(pkg)
+                        if has_error:
+                            print(f"\033[1;33m[-] Phát hiện {pkg} bị lỗi [{error_msg}]! Tiến hành Rejoin riêng tab này...\033[0m")
                             close_game(pkg)
-                            time.sleep(2)
-                            open_game(pkg)
                             time.sleep(3)
-                            run_cmd(["logcat", "-c"])
+                            open_game(pkg)
+                            time.sleep(10)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
@@ -393,13 +422,13 @@ def start_tool():
                         close_game(pkg)
                     time.sleep(3)
                     
-                    print("\033[1;32m[*] Đang mở lại game...\033[0m")
-                    for pkg in packages:
+                    print("\033[1;32m[*] Đang mở lại tất cả các game (Delay 10s/tab)...\033[0m")
+                    for idx, pkg in enumerate(packages):
                         open_game(pkg)
-                        time.sleep(2)
+                        if idx < len(packages) - 1:
+                            time.sleep(CLONE_LAUNCH_DELAY)
                         
                     start_time = time.time()
-                    run_cmd(["logcat", "-c"])
 
             if (current_time - last_webhook_time) >= 300:
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
@@ -421,7 +450,7 @@ def start_tool():
 
 def show_banner():
     clear_screen()
-    rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+    rejoin_mode_str = "Quét Kick/Văng/Mã Lỗi" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
     print("\033[1;35m==================================================\033[0m")
     print(f"\033[1;37m        PAIN TOOL REJOIN VIP ({VERSION})          \033[0m")
@@ -429,6 +458,7 @@ def show_banner():
     print(f"\033[1;35m Package Prefix  :\033[0m \033[1;37m{PACKAGE_PREFIX}\033[0m")
     print(f"\033[1;35m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;35m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
+    print(f"\033[1;35m Delay Tab Clone :\033[0m \033[1;37m{CLONE_LAUNCH_DELAY} giây\033[0m")
     print(f"\033[1;35m Webhook URL     :\033[0m \033[1;37m{'Đã cấu hình' if WEBHOOK_URL else 'Chưa đặt'}\033[0m")
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;35m[1]\033[0m \033[1;37mStart\033[0m")
@@ -465,7 +495,7 @@ if __name__ == "__main__":
                 if sub == "1":
                     clear_screen()
                     print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Auto rejoin khi bị kick/văng (Thông minh)\033[0m")
+                    print("\033[1;37m1. Auto rejoin khi bị kick/văng/mã lỗi (Thông minh)\033[0m")
                     print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
                     mode = input("Chọn cơ chế [1/2]: ").strip()
                     if mode == "1":
@@ -536,7 +566,7 @@ if __name__ == "__main__":
             url = input("Nhập Link Discord Webhook (Để trống để xóa): ").strip()
             WEBHOOK_URL = url
             if WEBHOOK_URL:
-                print("\033[1;32m[+] Đã lưu! Đang gửi tin nhắn test...\033[0m")
+                print("\033[1;32m[+] Đã lưu! Đang gửi tin nhắn test chụp màn hình...\033[0m")
                 send_webhook("Mới kích hoạt và gửi đến discord.", with_image=True)
             time.sleep(1.5)
             
@@ -617,6 +647,7 @@ if __name__ == "__main__":
                     if len(parts) > 1:
                         found_pkgs.append(parts[1].strip())
             
+            found_pkgs.sort()
             if not found_pkgs:
                 print(f"\033[1;31m[-] Không tìm thấy ứng dụng nào chứa prefix: {PACKAGE_PREFIX}\033[0m")
                 print(f"\033[1;33m[*] Thử mở gói mặc định: {PACKAGE_PREFIX}\033[0m")
@@ -624,10 +655,13 @@ if __name__ == "__main__":
             else:
                 print(f"\033[1;32m[+] Tìm thấy {len(found_pkgs)} ứng dụng!\033[0m")
                 
-            for pkg in found_pkgs:
-                print(f"[*] Đang mở: {pkg}")
+            for idx, pkg in enumerate(found_pkgs):
+                print(f"[*] [{idx+1}/{len(found_pkgs)}] Đang mở: {pkg}")
                 open_game(pkg)
-                time.sleep(1.5)
+                if idx < len(found_pkgs) - 1:
+                    print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s trước khi mở tab tiếp theo...\033[0m")
+                    time.sleep(CLONE_LAUNCH_DELAY)
+                    
             print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
             time.sleep(2)
 
