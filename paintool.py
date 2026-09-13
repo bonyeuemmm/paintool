@@ -195,9 +195,6 @@ def handle_send_text():
             "embeds": [
                 {
                     "description": description_text,
-                    "thumbnail": {
-                        "url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png"
-                    },
                     "footer": {
                         "text": footer_text
                     },
@@ -541,41 +538,6 @@ if __name__ == "__main__":
                 run_cmd(["su", "-c", f"mkdir -p {target}"])
                 
                 run_cmd(["cp", temp_path, f"{target}/script.lua"])
-                run_cmd(["su", "-c", f"cp {temp_path} {target}/script.lua"])
-
-            try:
-                os.remove(temp_path)
-            except:
-                run_cmd(["rm", temp_path])
-                
-            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
-            time.sleep(2.5)
-                
-        elif choice == "8":
-            clear_screen()
-            print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
-            print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
-            
-            output = run_cmd(["pm", "list", "packages"])
-            found_pkgs = []
-            for line in output.splitlines():
-                if PACKAGE_PREFIX in line:
-                    parts = line.split(":")
-                    if len(parts) > 1:
-                        found_pkgs.append(parts[1].strip())
-            
-            if not found_pkgs:
-                print(f"\033[1;31m[-] Không tìm thấy ứng dụng nào chứa prefix: {PACKAGE_PREFIX}\033[0m")
-                print(f"\033[1;33m[*] Thử mở gói mặc định: {PACKAGE_PREFIX}\033[0m")
-                found_pkgs = [PACKAGE_PREFIX]
-            else:
-                print(f"\033[1;32m[+] Tìm thấy {len(found_pkgs)} ứng dụng!\033[0m")
-                
-            for pkg in found_pkgs:
-                print(f"[*] Đang mở: {pkg}")
-                open_game(pkg)
-                time.sleep(1.5)
-            print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
                 run_cmd(["su", "-c", f"cp {temp_path} {target}/script.lua"])
 
             try:
