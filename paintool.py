@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.1.9-Beta"
+VERSION = "v1.2.0-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -24,8 +24,6 @@ DELAY_REJOIN_MINUTES = 1
 CLONE_LAUNCH_DELAY = 10
 stop_start = False
 START_UP_TIME = None
-
-ROBLOX_ERROR_CODES = ["277", "260", "279", "268", "267", "273", "278", "264", "261", "524"]
 
 def clear_screen():
     os.system('stty sane 2>/dev/null')
@@ -121,7 +119,7 @@ def send_webhook(message, with_image=False):
         time_display_str = f"hôm nay lúc {now.strftime('%H:%M')}"
         footer_text = f"MADE BY PAIN | {time_display_str}"
         packages = get_all_packages()
-        rejoin_mode_str = "Quét Kick/Văng/Mã Lỗi" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+        rejoin_mode_str = "Theo dõi tiến trình PID" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
         start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
         
         description_text = (
@@ -260,29 +258,6 @@ def close_game(pkg):
         run_cmd(cmd_kill.split())
         run_cmd(cmd_force.split())
 
-def clear_logcat():
-    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    if is_root:
-        run_cmd(["su", "-c", "logcat -c"])
-    else:
-        run_cmd(["logcat", "-c"])
-
-def check_package_error(pkg):
-    log_output = run_cmd(["logcat", "-d", "-t", "30"], timeout=4)
-    if not log_output:
-        return False, None
-
-    general_keywords = ['you have been kicked', 'disconnected from game', 'unexpected disconnection']
-    for line in log_output.splitlines():
-        line_lower = line.lower()
-        if pkg in line_lower or "roblox" in line_lower:
-            for code in ROBLOX_ERROR_CODES:
-                if f"error code: {code}" in line_lower or f"error {code}" in line_lower or f"code {code}" in line_lower:
-                    return True, f"Mã Lỗi {code}"
-            if any(k in line_lower for k in general_keywords):
-                return True, "Mất kết nối / Kicked"
-    return False, None
-
 def listen_for_stop():
     global stop_start
     while not stop_start:
@@ -300,21 +275,15 @@ def start_tool():
     packages = get_all_packages()
     START_UP_TIME = datetime.now()
     
-    # Lưu thời điểm vừa Rejoin của từng package để bỏ qua kiểm tra log trong 30s đầu
-    last_rejoin_time = {pkg: time.time() for pkg in packages}
-    
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
     print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter để ngắt Start.\033[0m")
     print("--------------------------------------------------")
     
-    clear_logcat()
-
     for idx, pkg in enumerate(packages):
         print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
         open_game(pkg)
-        last_rejoin_time[pkg] = time.time()
         if idx < len(packages) - 1:
             print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
             time.sleep(CLONE_LAUNCH_DELAY)
@@ -338,44 +307,29 @@ def start_tool():
                 for pkg in packages:
                     if stop_start: break
                     
+                    # Kiểm tra xem Tiến trình (PID) còn tồn tại không
                     pid = run_cmd(["pidof", pkg], timeout=3)
                     ps_out = run_cmd(["ps", "-A"], timeout=5)
                     is_running = bool(pid) or (pkg in ps_out)
 
+                    # Nếu tiến trình biến mất hoàn toàn (Crash/Văng)
                     if not is_running:
-                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang dọn đa nhiệm & mở lại...\033[0m")
+                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang kích hoạt lại...\033[0m")
                         close_game(pkg)
-                        clear_logcat()
                         time.sleep(2)
                         open_game(pkg)
-                        last_rejoin_time[pkg] = time.time()
-                        time.sleep(10)
-                    else:
-                        # Bỏ qua kiểm tra lỗi nếu game mới được bật chưa quá 30 giây
-                        if time.time() - last_rejoin_time.get(pkg, 0) < 30:
-                            continue
-
-                        has_error, error_msg = check_package_error(pkg)
-                        if has_error:
-                            print(f"\033[1;33m[-] Phát hiện {pkg} lỗi [{error_msg}]! Đang Rejoin...\033[0m")
-                            close_game(pkg)
-                            clear_logcat()
-                            time.sleep(3)
-                            open_game(pkg)
-                            last_rejoin_time[pkg] = time.time()
-                            time.sleep(10)
+                        print(f"\033[1;32m[+] Đã phát lệnh mở lại {pkg}. Chờ 20s ổn định...\033[0m")
+                        time.sleep(20)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
                     print(f"\033[1;33m[*] Chu kỳ {DELAY_REJOIN_MINUTES}p hoàn tất. Restart toàn bộ tab...\033[0m")
                     for pkg in packages:
                         close_game(pkg)
-                    clear_logcat()
                     time.sleep(3)
                     
                     for idx, pkg in enumerate(packages):
                         open_game(pkg)
-                        last_rejoin_time[pkg] = time.time()
                         if idx < len(packages) - 1:
                             time.sleep(CLONE_LAUNCH_DELAY)
                     start_time = time.time()
@@ -385,7 +339,7 @@ def start_tool():
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = time.time()
 
-            for _ in range(3):
+            for _ in range(5):
                 if stop_start: break
                 time.sleep(1)
 
@@ -401,7 +355,7 @@ def start_tool():
 
 def show_banner():
     clear_screen()
-    rejoin_mode_str = "Quét Kick/Văng/Mã Lỗi" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+    rejoin_mode_str = "Theo dõi tiến trình PID" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     print("\033[1;35m==================================================\033[0m")
     print(f"\033[1;37m        PAIN TOOL REJOIN VIP ({VERSION})          \033[0m")
     print("\033[1;35m==================================================\033[0m")
@@ -441,12 +395,12 @@ if __name__ == "__main__":
                 if sub == "1":
                     clear_screen()
                     print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Auto rejoin khi bị kick/văng/mã lỗi (Thông minh)\033[0m")
+                    print("\033[1;37m1. Auto rejoin khi văng/mất tiến trình\033[0m")
                     print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
                     mode = input("Chọn cơ chế [1/2]: ").strip()
                     if mode == "1":
                         AUTO_REJOIN_MODE = 1
-                        print("\033[1;32m[+] Đã chọn Auto Rejoin thông minh!\033[0m")
+                        print("\033[1;32m[+] Đã chọn Auto Rejoin PID chuẩn!\033[0m")
                     elif mode == "2":
                         AUTO_REJOIN_MODE = 2
                         mins = input("Nhập thời gian chu kỳ (phút): ").strip()
