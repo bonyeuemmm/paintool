@@ -148,9 +148,11 @@ def handle_send_text():
             time.sleep(1)
             return
             
-        discord_id = input("Nhập ID tài khoản Discord để ping (Để trống để bỏ qua): ").strip()
+        discord_name = input("Nhập tên người dùng Discord: ").strip()
+        discord_ping = input("Nhập Ping (ví dụ @tên hoặc để trống): ").strip()
+        discord_id = input("Nhập UID tài khoản Discord: ").strip()
         
-        ping_text = f"<@{discord_id}>" if discord_id else None
+        ping_text = f"{discord_ping}" if discord_ping else None
         
         now = datetime.now()
         today_date = now.date()
@@ -169,13 +171,17 @@ def handle_send_text():
             
         footer_text = f"MADE BY PAIN | {time_display_str}"
         
-        user_info_str = f"<@{discord_id}>" if discord_id else "❌ người dùng không xác định"
+        name_str = discord_name if discord_name else "Không có"
+        ping_str = discord_ping if discord_ping else "Không có"
+        uid_str = discord_id if discord_id else "Không có"
         
         description_text = (
             "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
             f"{content_input}\n\n"
-            "👤 Thông tin ID người dùng:\n"
-            f"{user_info_str}\n\n"
+            "👤 Thông tin người gửi:\n"
+            f"- Tên người dùng discord: {name_str}\n"
+            f"- Ping: {ping_str}\n"
+            f"- UID: {uid_str}\n\n"
             "🕐 Thời gian gửi:\n"
             f"{now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
         )
@@ -536,7 +542,7 @@ if __name__ == "__main__":
             except:
                 run_cmd(["rm", temp_path])
                 
-            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m] ")
+            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
             time.sleep(2.5)
                 
         elif choice == "8":
@@ -544,7 +550,6 @@ if __name__ == "__main__":
             print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
             print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
             
-            run_cmd(["pm", "list", "packages"])
             output = run_cmd(["pm", "list", "packages"])
             found_pkgs = []
             for line in output.splitlines():
