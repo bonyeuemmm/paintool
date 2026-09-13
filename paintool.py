@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.1.4-beta"
+VERSION = "v1.1.7-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -31,9 +31,9 @@ def clear_screen():
     os.system('stty sane 2>/dev/null')
     os.system('clear')
 
-def run_cmd(cmd_list):
+def run_cmd(cmd_list, timeout=15):
     try:
-        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         return res.stdout.strip()
     except Exception:
         return ""
@@ -54,7 +54,7 @@ def check_license_curl(key, hwid):
             "-H", "Content-Type: application/json",
             "-d", payload,
             "--connect-timeout", "10"
-        ])
+        ], timeout=10)
         if not res_text:
             return False, "Không kết nối được server"
         try:
@@ -160,7 +160,7 @@ def send_webhook(message, with_image=False):
                     "curl", "-s", "-X", "POST", WEBHOOK_URL,
                     "-F", f"payload_json={payload_json}",
                     "-F", f"files[0]=@{SCREENSHOT_PATH};filename=screenshot.png"
-                ])
+                ], timeout=20)
                 try:
                     os.remove(SCREENSHOT_PATH)
                 except Exception:
@@ -176,7 +176,7 @@ def send_webhook(message, with_image=False):
             "curl", "-s", "-X", "POST", WEBHOOK_URL,
             "-H", "Content-Type: application/json",
             "-d", payload_json
-        ])
+        ], timeout=15)
     except Exception:
         pass
 
@@ -249,11 +249,21 @@ def open_game(pkg):
         run_cmd(cmd.split())
 
 def close_game(pkg):
-    run_cmd(["su", "-c", f"am force-stop {pkg}"])
-    run_cmd(["am", "force-stop", pkg])
+    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+    
+    # Xóa sạch tiến trình và xóa luôn thẻ khỏi danh sách Đa nhiệm (Recents List)
+    cmd_kill = f"am kill {pkg}"
+    cmd_force = f"am force-stop {pkg}"
+    
+    if is_root:
+        run_cmd(["su", "-c", cmd_kill])
+        run_cmd(["su", "-c", cmd_force])
+    else:
+        run_cmd(cmd_kill.split())
+        run_cmd(cmd_force.split())
 
 def check_package_error(pkg):
-    log_output = run_cmd(["logcat", "-d", "-t", "100"])
+    log_output = run_cmd(["logcat", "-d", "-t", "50"], timeout=5)
     if not log_output:
         return False, None
 
@@ -319,14 +329,16 @@ def start_tool():
                 for pkg in packages:
                     if stop_start: break
                     
-                    pid = run_cmd(["pidof", pkg])
-                    ps_out = run_cmd(["ps", "-A"])
+                    pid = run_cmd(["pidof", pkg], timeout=3)
+                    ps_out = run_cmd(["ps", "-A"], timeout=5)
                     is_running = bool(pid) or (pkg in ps_out)
 
                     if not is_running:
-                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang mở lại...\033[0m")
+                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang dọn đa nhiệm & mở lại...\033[0m")
+                        close_game(pkg)
+                        time.sleep(2)
                         open_game(pkg)
-                        time.sleep(15)
+                        time.sleep(10)
                     else:
                         has_error, error_msg = check_package_error(pkg)
                         if has_error:
@@ -335,7 +347,7 @@ def start_tool():
                             time.sleep(3)
                             run_cmd(["logcat", "-c"])
                             open_game(pkg)
-                            time.sleep(15)
+                            time.sleep(10)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
@@ -350,11 +362,12 @@ def start_tool():
                             time.sleep(CLONE_LAUNCH_DELAY)
                     start_time = time.time()
 
-            if (current_time - last_webhook_time) >= 300:
+            if (time.time() - last_webhook_time) >= 300:
+                print("\033[1;32m[*] Đã đủ 5 phút, đang gửi báo cáo định kỳ...\033[0m")
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
-                last_webhook_time = current_time
+                last_webhook_time = time.time()
 
-            for _ in range(5):
+            for _ in range(3):
                 if stop_start: break
                 time.sleep(1)
 
