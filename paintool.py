@@ -9,7 +9,7 @@ import threading
 import sqlite3
 from datetime import datetime, timedelta
 
-VERSION = "v1.1.2"
+VERSION = "v1.1.3-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -23,6 +23,7 @@ CUSTOM_SEND_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5o
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
 stop_start = False
+START_UP_TIME = None
 
 def clear_screen():
     os.system('stty sane 2>/dev/null')
@@ -120,16 +121,73 @@ def send_webhook(message, with_image=False):
     if not WEBHOOK_URL:
         return
     try:
-        payload_json = json.dumps({"content": message})
+        now = datetime.now()
+        today_date = now.date()
+        msg_date = now.date()
+        time_str = now.strftime("%H:%M")
+        
+        delta_days = (today_date - msg_date).days
+        if delta_days == 0:
+            time_display_str = f"hôm nay lúc {time_str}"
+        elif delta_days == 1:
+            time_display_str = f"hôm qua lúc {time_str}"
+        elif msg_date.year == today_date.year:
+            time_display_str = f"{msg_date.strftime('%d/%m')} lúc {time_str}"
+        else:
+            time_display_str = f"{msg_date.strftime('%d/%m/%Y')} lúc {time_str}"
+            
+        footer_text = f"MADE BY PAIN | {time_display_str}"
+        
+        packages = get_all_packages()
+        rejoin_mode_str = "Quét Kick/Văng" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+        start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
+        
+        description_text = (
+            f"**{message}**\n\n"
+            f"📊 **Thông tin hệ thống:**\n"
+            f"• **Phiên bản:** {VERSION}\n"
+            f"• **Thời gian khởi động:** {start_time_str}\n"
+            f"• **Số Tab đang treo:** {len(packages)} tab ({PACKAGE_PREFIX})\n"
+            f"• **Chế độ Game:** {SELECTED_GAME_NAME}\n"
+            f"• **Cơ chế Rejoin:** {rejoin_mode_str}\n"
+            f"• **Thời gian báo cáo:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+        )
+
+        embed_obj = {
+            "title": f"PAIN TOOL REJOIN VIP STATUS ({VERSION})",
+            "description": description_text,
+            "color": 65280,
+            "footer": {
+                "text": footer_text
+            }
+        }
+
         if with_image:
             run_cmd(["screencap", "-p", SCREENSHOT_PATH])
             if os.path.exists(SCREENSHOT_PATH):
+                embed_obj["image"] = {"url": "attachment://screenshot.png"}
+                payload_json = json.dumps({
+                    "username": "PAIN TOOL REJOIN VIP",
+                    "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+                    "embeds": [embed_obj]
+                })
                 run_cmd([
                     "curl", "-s", "-X", "POST", WEBHOOK_URL,
                     "-F", f"payload_json={payload_json}",
-                    "-F", f"file=@{SCREENSHOT_PATH}"
+                    "-F", f"files[0]=@{SCREENSHOT_PATH};filename=screenshot.png"
                 ])
+                
+                try:
+                    os.remove(SCREENSHOT_PATH)
+                except Exception:
+                    run_cmd(["rm", "-f", SCREENSHOT_PATH])
                 return
+
+        payload_json = json.dumps({
+            "username": "PAIN TOOL REJOIN VIP",
+            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+            "embeds": [embed_obj]
+        })
         run_cmd([
             "curl", "-s", "-X", "POST", WEBHOOK_URL,
             "-H", "Content-Type: application/json",
@@ -177,7 +235,7 @@ def handle_send_text():
             ping_text = None
         
         description_text = (
-            "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
+            f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP ({VERSION})\n\n"
             f"{content_input}\n\n"
             "👤 Thông tin người gửi:\n"
             f"• Tên người dùng: {user_tag_str}\n"
@@ -187,7 +245,7 @@ def handle_send_text():
         )
         
         embed_data = {
-            "username": "Pain REJOIN VIP",
+            "username": "PAIN TOOL REJOIN VIP",
             "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
             "embeds": [
                 {
@@ -257,9 +315,10 @@ def listen_for_stop():
             break
 
 def start_tool():
-    global stop_start
+    global stop_start, START_UP_TIME
     clear_screen()
     packages = get_all_packages()
+    START_UP_TIME = datetime.now()
     
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
@@ -270,7 +329,7 @@ def start_tool():
         open_game(pkg)
         time.sleep(2)
 
-    send_webhook(f"[PAIN TOOL {VERSION}] Bắt đầu theo dõi {len(packages)} tab. Auto Rejoin Mode: {AUTO_REJOIN_MODE}")
+    send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
 
     start_time = time.time()
     last_webhook_time = time.time()
@@ -343,7 +402,7 @@ def start_tool():
                     run_cmd(["logcat", "-c"])
 
             if (current_time - last_webhook_time) >= 300:
-                send_webhook(f"[PAIN TOOL {VERSION}] Cập nhật trạng thái định kỳ (5 phút):", with_image=True)
+                send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = current_time
 
             for _ in range(4):
@@ -478,7 +537,7 @@ if __name__ == "__main__":
             WEBHOOK_URL = url
             if WEBHOOK_URL:
                 print("\033[1;32m[+] Đã lưu! Đang gửi tin nhắn test...\033[0m")
-                send_webhook(f"[PAIN TOOL {VERSION}] Mới kích hoạt và gửi đến discord.")
+                send_webhook("Mới kích hoạt và gửi đến discord.", with_image=True)
             time.sleep(1.5)
             
         elif choice == "6":
