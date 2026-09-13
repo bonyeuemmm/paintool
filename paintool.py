@@ -172,11 +172,11 @@ def handle_send_text():
         user_info_str = f"<@{discord_id}>" if discord_id else "❌ người dùng không xác định"
         
         description_text = (
-            f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
+            "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
             f"{content_input}\n\n"
-            f"👤 Thông tin ID người dùng:\n"
+            "👤 Thông tin ID người dùng:\n"
             f"{user_info_str}\n\n"
-            f"🕐 Thời gian gửi:\n"
+            "🕐 Thời gian gửi:\n"
             f"{now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
         )
         
@@ -536,7 +536,7 @@ if __name__ == "__main__":
             except:
                 run_cmd(["rm", temp_path])
                 
-            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
+            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m] ")
             time.sleep(2.5)
                 
         elif choice == "8":
@@ -544,6 +544,7 @@ if __name__ == "__main__":
             print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
             print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
             
+            run_cmd(["pm", "list", "packages"])
             output = run_cmd(["pm", "list", "packages"])
             found_pkgs = []
             for line in output.splitlines():
