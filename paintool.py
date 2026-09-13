@@ -138,43 +138,6 @@ def send_webhook(message, with_image=False):
     except Exception:
         pass
 
-def get_display_name(user_id):
-    if not user_id or not user_id.isdigit():
-        return "Ẩn danh"
-    try:
-        payload = json.dumps({"user_ids": [user_id]})
-        res = run_cmd([
-            "curl", "-s", "-X", "POST",
-            "https://discord.com/api/v9/users/search",
-            "-H", "Content-Type: application/json",
-            "-d", payload
-        ])
-        if res:
-            data = json.loads(res)
-            if isinstance(data, list) and len(data) > 0:
-                user_info = data[0]
-                return user_info.get("global_name") or user_info.get("username") or user_id
-            elif isinstance(data, dict) and "users" in data and len(data["users"]) > 0:
-                user_info = data["users"][0]
-                return user_info.get("global_name") or user_info.get("username") or user_id
-    except Exception:
-        pass
-    
-    try:
-        res_profile = run_cmd([
-            "curl", "-s", "-X", "GET",
-            f"https://discord.com/api/v9/users/{user_id}/profile"
-        ])
-        if res_profile:
-            data_prof = json.loads(res_profile)
-            user_obj = data_prof.get("user", {})
-            if user_obj:
-                return user_obj.get("global_name") or user_obj.get("username") or user_id
-    except Exception:
-        pass
-
-    return user_id
-
 def handle_send_text():
     while True:
         clear_screen()
@@ -205,14 +168,11 @@ def handle_send_text():
         footer_text = f"MADE BY PAIN | {time_display_str}"
         
         if discord_id:
-            print("\033[1;33m[*] Đang nhận diện thông tin người dùng...\033[0m")
-            display_name = get_display_name(discord_id)
-            ping_str = f"<@{discord_id}>"
+            user_tag_str = f"<@{discord_id}>"
             uid_str = discord_id
             ping_text = f"<@{discord_id}>"
         else:
-            display_name = "Ẩn danh"
-            ping_str = "Không có"
+            user_tag_str = "Ẩn danh"
             uid_str = "Không có"
             ping_text = None
         
@@ -220,8 +180,7 @@ def handle_send_text():
             "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
             f"{content_input}\n\n"
             "👤 Thông tin người gửi:\n"
-            f"• Tên người dùng:\n  **{display_name}**\n"
-            f"• Ping: {ping_str}\n"
+            f"• Tên người dùng: {user_tag_str}\n"
             f"• UID: {uid_str}\n\n"
             "🕐 Thời gian gửi:\n"
             f"{now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
