@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.1.7-Beta"
+VERSION = "v1.1.8-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -250,8 +250,6 @@ def open_game(pkg):
 
 def close_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    
-    # Xóa sạch tiến trình và xóa luôn thẻ khỏi danh sách Đa nhiệm (Recents List)
     cmd_kill = f"am kill {pkg}"
     cmd_force = f"am force-stop {pkg}"
     
@@ -261,6 +259,13 @@ def close_game(pkg):
     else:
         run_cmd(cmd_kill.split())
         run_cmd(cmd_force.split())
+
+def clear_logcat():
+    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+    if is_root:
+        run_cmd(["su", "-c", "logcat -c"])
+    else:
+        run_cmd(["logcat", "-c"])
 
 def check_package_error(pkg):
     log_output = run_cmd(["logcat", "-d", "-t", "50"], timeout=5)
@@ -301,7 +306,7 @@ def start_tool():
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter để ngắt Start.\033[0m")
     print("--------------------------------------------------")
     
-    run_cmd(["logcat", "-c"])
+    clear_logcat()
 
     for idx, pkg in enumerate(packages):
         print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
@@ -336,24 +341,26 @@ def start_tool():
                     if not is_running:
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang dọn đa nhiệm & mở lại...\033[0m")
                         close_game(pkg)
+                        clear_logcat()
                         time.sleep(2)
                         open_game(pkg)
-                        time.sleep(10)
+                        time.sleep(15)
                     else:
                         has_error, error_msg = check_package_error(pkg)
                         if has_error:
                             print(f"\033[1;33m[-] Phát hiện {pkg} lỗi [{error_msg}]! Đang Rejoin...\033[0m")
                             close_game(pkg)
+                            clear_logcat()
                             time.sleep(3)
-                            run_cmd(["logcat", "-c"])
                             open_game(pkg)
-                            time.sleep(10)
+                            time.sleep(15)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
                     print(f"\033[1;33m[*] Chu kỳ {DELAY_REJOIN_MINUTES}p hoàn tất. Restart toàn bộ tab...\033[0m")
                     for pkg in packages:
                         close_game(pkg)
+                    clear_logcat()
                     time.sleep(3)
                     
                     for idx, pkg in enumerate(packages):
