@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.1.4-Beta"
+VERSION = "v1.1.4-beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -143,8 +143,13 @@ def send_webhook(message, with_image=False):
         }
 
         if with_image:
-            run_cmd(["screencap", "-p", SCREENSHOT_PATH])
-            if os.path.exists(SCREENSHOT_PATH):
+            is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+            if is_root:
+                run_cmd(["su", "-c", f"screencap -p {SCREENSHOT_PATH}"])
+            else:
+                run_cmd(["screencap", "-p", SCREENSHOT_PATH])
+
+            if os.path.exists(SCREENSHOT_PATH) and os.path.getsize(SCREENSHOT_PATH) > 0:
                 embed_obj["image"] = {"url": "attachment://screenshot.png"}
                 payload_json = json.dumps({
                     "username": "PAIN TOOL REJOIN VIP",
@@ -159,7 +164,7 @@ def send_webhook(message, with_image=False):
                 try:
                     os.remove(SCREENSHOT_PATH)
                 except Exception:
-                    run_cmd(["rm", "-f", SCREENSHOT_PATH])
+                    run_cmd(["su", "-c", f"rm -f {SCREENSHOT_PATH}"])
                 return
 
         payload_json = json.dumps({
@@ -230,7 +235,6 @@ def get_all_packages():
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
-    """Mở game chuẩn xác, không gọi trùng lặp lệnh làm văng app"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
 
     if TARGET_LINK:
@@ -322,7 +326,6 @@ def start_tool():
                     if not is_running:
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang mở lại...\033[0m")
                         open_game(pkg)
-                        # Chờ game khởi động hoàn tất trước khi quét tiếp
                         time.sleep(15)
                     else:
                         has_error, error_msg = check_package_error(pkg)
