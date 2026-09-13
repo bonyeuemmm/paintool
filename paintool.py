@@ -142,15 +142,37 @@ def get_display_name(user_id):
     if not user_id or not user_id.isdigit():
         return "Ẩn danh"
     try:
+        payload = json.dumps({"user_ids": [user_id]})
         res = run_cmd([
-            "curl", "-s", "-X", "GET",
-            f"https://discord.com/api/v10/users/{user_id}"
+            "curl", "-s", "-X", "POST",
+            "https://discord.com/api/v9/users/search",
+            "-H", "Content-Type: application/json",
+            "-d", payload
         ])
         if res:
             data = json.loads(res)
-            return data.get("global_name") or data.get("username") or user_id
+            if isinstance(data, list) and len(data) > 0:
+                user_info = data[0]
+                return user_info.get("global_name") or user_info.get("username") or user_id
+            elif isinstance(data, dict) and "users" in data and len(data["users"]) > 0:
+                user_info = data["users"][0]
+                return user_info.get("global_name") or user_info.get("username") or user_id
     except Exception:
         pass
+    
+    try:
+        res_profile = run_cmd([
+            "curl", "-s", "-X", "GET",
+            f"https://discord.com/api/v9/users/{user_id}/profile"
+        ])
+        if res_profile:
+            data_prof = json.loads(res_profile)
+            user_obj = data_prof.get("user", {})
+            if user_obj:
+                return user_obj.get("global_name") or user_obj.get("username") or user_id
+    except Exception:
+        pass
+
     return user_id
 
 def handle_send_text():
@@ -198,7 +220,7 @@ def handle_send_text():
             "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
             f"{content_input}\n\n"
             "👤 Thông tin người gửi:\n"
-            f"• Tên người dùng: **{display_name}**\n"
+            f"• Tên người dùng:\n  **{display_name}**\n"
             f"• Ping: {ping_str}\n"
             f"• UID: {uid_str}\n\n"
             "🕐 Thời gian gửi:\n"
