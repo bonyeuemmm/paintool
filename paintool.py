@@ -6,10 +6,9 @@ import json
 import random
 import string
 import threading
-import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 
-VERSION = "v1.1.3-Beta"
+VERSION = "v1.1.4-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
@@ -22,15 +21,11 @@ CUSTOM_SEND_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5o
 
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
-CLONE_LAUNCH_DELAY = 10  # Delay 10s giữa các tab clone
+CLONE_LAUNCH_DELAY = 10
 stop_start = False
 START_UP_TIME = None
 
-# Danh sách 10 mã lỗi Roblox cần quét
-ROBLOX_ERROR_CODES = [
-    "277", "260", "279", "268", "267", 
-    "273", "278", "264", "261", "524"
-]
+ROBLOX_ERROR_CODES = ["277", "260", "279", "268", "267", "273", "278", "264", "261", "524"]
 
 def clear_screen():
     os.system('stty sane 2>/dev/null')
@@ -62,21 +57,18 @@ def check_license_curl(key, hwid):
         ])
         if not res_text:
             return False, "Không kết nối được server"
-
         try:
             data = json.loads(res_text)
             if isinstance(data, dict):
                 return data.get("valid") is True or data.get("status") == "success", res_text
         except Exception:
             pass
-            
         is_valid = ("valid" in res_text.lower() and "true" in res_text.lower()) or "success" in res_text.lower()
         return is_valid, res_text
     except Exception as e:
         return False, str(e)
 
 def authenticate():
-    global LICENSE_FILE
     hwid = get_hwid()
     if os.path.exists(LICENSE_FILE):
         try:
@@ -102,15 +94,12 @@ def authenticate():
         print("\033[1;35m==================================================\033[0m")
         print(f"\033[1;36m HWID hiện tại: {hwid}\033[0m")
         input_key = input("Nhập Key (0 để thoát): ").strip()
-        
         if input_key in ["exit", "0"]:
             sys.exit(0)
         if not input_key:
             continue
-
         print("\033[1;35m[*] Đang kết nối máy chủ...\033[0m")
         is_valid, response_text = check_license_curl(input_key, hwid)
-
         if is_valid:
             try:
                 with open(LICENSE_FILE, "w") as f:
@@ -129,22 +118,8 @@ def send_webhook(message, with_image=False):
         return
     try:
         now = datetime.now()
-        today_date = now.date()
-        msg_date = now.date()
-        time_str = now.strftime("%H:%M")
-        
-        delta_days = (today_date - msg_date).days
-        if delta_days == 0:
-            time_display_str = f"hôm nay lúc {time_str}"
-        elif delta_days == 1:
-            time_display_str = f"hôm qua lúc {time_str}"
-        elif msg_date.year == today_date.year:
-            time_display_str = f"{msg_date.strftime('%d/%m')} lúc {time_str}"
-        else:
-            time_display_str = f"{msg_date.strftime('%d/%m/%Y')} lúc {time_str}"
-            
+        time_display_str = f"hôm nay lúc {now.strftime('%H:%M')}"
         footer_text = f"MADE BY PAIN | {time_display_str}"
-        
         packages = get_all_packages()
         rejoin_mode_str = "Quét Kick/Văng/Mã Lỗi" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
         start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
@@ -164,9 +139,7 @@ def send_webhook(message, with_image=False):
             "title": f"PAIN TOOL REJOIN VIP STATUS ({VERSION})",
             "description": description_text,
             "color": 65280,
-            "footer": {
-                "text": footer_text
-            }
+            "footer": {"text": footer_text}
         }
 
         if with_image:
@@ -183,7 +156,6 @@ def send_webhook(message, with_image=False):
                     "-F", f"payload_json={payload_json}",
                     "-F", f"files[0]=@{SCREENSHOT_PATH};filename=screenshot.png"
                 ])
-                
                 try:
                     os.remove(SCREENSHOT_PATH)
                 except Exception:
@@ -214,32 +186,11 @@ def handle_send_text():
             return
             
         discord_id = input("Nhập UID tài khoản Discord (Để trống để bỏ qua): ").strip()
-        
         now = datetime.now()
-        today_date = now.date()
-        msg_date = now.date()
-        time_str = now.strftime("%H:%M")
+        footer_text = f"MADE BY PAIN | hôm nay lúc {now.strftime('%H:%M')}"
         
-        delta_days = (today_date - msg_date).days
-        if delta_days == 0:
-            time_display_str = f"hôm nay lúc {time_str}"
-        elif delta_days == 1:
-            time_display_str = f"hôm qua lúc {time_str}"
-        elif msg_date.year == today_date.year:
-            time_display_str = f"{msg_date.strftime('%d/%m')} lúc {time_str}"
-        else:
-            time_display_str = f"{msg_date.strftime('%d/%m/%Y')} lúc {time_str}"
-            
-        footer_text = f"MADE BY PAIN | {time_display_str}"
-        
-        if discord_id:
-            user_tag_str = f"<@{discord_id}>"
-            uid_str = discord_id
-            ping_text = f"<@{discord_id}>"
-        else:
-            user_tag_str = "Ẩn danh"
-            uid_str = "Không có"
-            ping_text = None
+        user_tag_str = f"<@{discord_id}>" if discord_id else "Ẩn danh"
+        uid_str = discord_id if discord_id else "Không có"
         
         description_text = (
             f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP ({VERSION})\n\n"
@@ -254,31 +205,17 @@ def handle_send_text():
         embed_data = {
             "username": "PAIN TOOL REJOIN VIP",
             "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-            "embeds": [
-                {
-                    "description": description_text,
-                    "footer": {
-                        "text": footer_text
-                    },
-                    "color": 65280
-                }
-            ]
+            "embeds": [{"description": description_text, "footer": {"text": footer_text}, "color": 65280}]
         }
-        
-        if ping_text:
-            embed_data["content"] = ping_text
+        if discord_id:
+            embed_data["content"] = f"<@{discord_id}>"
         
         try:
             payload = json.dumps(embed_data)
-            run_cmd([
-                "curl", "-s", "-X", "POST", CUSTOM_SEND_WEBHOOK,
-                "-H", "Content-Type: application/json",
-                "-d", payload
-            ])
+            run_cmd(["curl", "-s", "-X", "POST", CUSTOM_SEND_WEBHOOK, "-H", "Content-Type: application/json", "-d", payload])
             print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
         except Exception as e:
             print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
-            
         time.sleep(2)
 
 def get_all_packages():
@@ -289,49 +226,42 @@ def get_all_packages():
             parts = line.split(":")
             if len(parts) > 1:
                 packages.append(parts[1].strip())
-    # Sắp xếp danh sách package theo thứ tự
     packages.sort()
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
+    """Mở game chuẩn xác, không gọi trùng lặp lệnh làm văng app"""
+    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+
     if TARGET_LINK:
-        if TARGET_LINK.isdigit():
-            deep_link = f"roblox://placeId={TARGET_LINK}"
-            run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -a android.intent.action.VIEW -d {deep_link} {pkg}"])
-            run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", deep_link, pkg])
-        else:
-            run_cmd(["su", "-c", f"am start -S -W --activity-clear-task -a android.intent.action.VIEW -d {TARGET_LINK} {pkg}"])
-            run_cmd(["am", "start", "-S", "-W", "-a", "android.intent.action.VIEW", "-d", TARGET_LINK, pkg])
+        deep_link = f"roblox://placeId={TARGET_LINK}" if TARGET_LINK.isdigit() else TARGET_LINK
+        cmd = f"am start -a android.intent.action.VIEW -d '{deep_link}' {pkg}"
     else:
-        run_cmd(["su", "-c", f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"])
-        run_cmd(["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"])
-    run_cmd(["logcat", "-c"])
+        cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+
+    if is_root:
+        run_cmd(["su", "-c", cmd])
+    else:
+        run_cmd(cmd.split())
 
 def close_game(pkg):
     run_cmd(["su", "-c", f"am force-stop {pkg}"])
     run_cmd(["am", "force-stop", pkg])
-    run_cmd(["su", "-c", f"pkill -f {pkg}"])
-    run_cmd(["su", "-c", f"killall {pkg}"])
 
 def check_package_error(pkg):
-    """Quét bộ nhớ logcat tìm chính xác mã lỗi roblox thuộc về package này"""
-    log_output = run_cmd(["logcat", "-d", "-t", "150"])
+    log_output = run_cmd(["logcat", "-d", "-t", "100"])
     if not log_output:
         return False, None
 
     general_keywords = ['disconnect', 'kicked', 'lost connection']
-    
     for line in log_output.splitlines():
         line_lower = line.lower()
-        if pkg in line_lower or "roblox" in line_lower or "unity" in line_lower:
-            # Kiểm tra 10 Mã Lỗi cụ thể
+        if pkg in line_lower or "roblox" in line_lower:
             for code in ROBLOX_ERROR_CODES:
-                if f"error {code}" in line_lower or f"code: {code}" in line_lower or f"code {code}" in line_lower or f"id={code}" in line_lower:
+                if f"error {code}" in line_lower or f"code: {code}" in line_lower or f"code {code}" in line_lower:
                     return True, f"Mã Lỗi {code}"
-            # Kiểm tra từ khóa ngắt kết nối chung
             if any(k in line_lower for k in general_keywords):
                 return True, "Mất kết nối / Kicked"
-                
     return False, None
 
 def listen_for_stop():
@@ -354,18 +284,18 @@ def start_tool():
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
     print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
-    print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter bất cứ lúc nào để ngừng Start.\033[0m")
+    print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter để ngắt Start.\033[0m")
     print("--------------------------------------------------")
     
-    # Mở từng tab clone theo thứ tự với Delay 10 giây
+    run_cmd(["logcat", "-c"])
+
     for idx, pkg in enumerate(packages):
         print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
         open_game(pkg)
         if idx < len(packages) - 1:
-            print(f"\033[1;33m[*] Đang đợi {CLONE_LAUNCH_DELAY}s để mở tab tiếp theo...\033[0m")
+            print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
             time.sleep(CLONE_LAUNCH_DELAY)
 
-    run_cmd(["logcat", "-c"])
     send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
 
     start_time = time.time()
@@ -379,67 +309,54 @@ def start_tool():
         while not stop_start:
             current_time = time.time()
             elapsed_minutes = (current_time - start_time) / 60.0
-            
             packages = get_all_packages()
 
             if AUTO_REJOIN_MODE == 1:
                 for pkg in packages:
                     if stop_start: break
                     
-                    # 1. Kiểm tra Process sống/chết
                     pid = run_cmd(["pidof", pkg])
-                    is_running = False
-                    
-                    if pid:
-                        is_running = True
-                    else:
-                        ps_out = run_cmd(["ps", "-A"])
-                        if pkg in ps_out:
-                            is_running = True
+                    ps_out = run_cmd(["ps", "-A"])
+                    is_running = bool(pid) or (pkg in ps_out)
 
                     if not is_running:
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang mở lại...\033[0m")
                         open_game(pkg)
-                        time.sleep(10)
+                        # Chờ game khởi động hoàn tất trước khi quét tiếp
+                        time.sleep(15)
                     else:
-                        # 2. Kiểm tra mã lỗi trong Logcat chỉ dành cho Tab này
                         has_error, error_msg = check_package_error(pkg)
                         if has_error:
-                            print(f"\033[1;33m[-] Phát hiện {pkg} bị lỗi [{error_msg}]! Tiến hành Rejoin riêng tab này...\033[0m")
+                            print(f"\033[1;33m[-] Phát hiện {pkg} lỗi [{error_msg}]! Đang Rejoin...\033[0m")
                             close_game(pkg)
                             time.sleep(3)
+                            run_cmd(["logcat", "-c"])
                             open_game(pkg)
-                            time.sleep(10)
+                            time.sleep(15)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
-                    print(f"\033[1;33m[*] Đã qua {DELAY_REJOIN_MINUTES} phút. Đang tiến hành đóng đa nhiệm...\033[0m")
-                    
-                    run_cmd(["input", "keyevent", "3"])
-                    time.sleep(2)
-                     
+                    print(f"\033[1;33m[*] Chu kỳ {DELAY_REJOIN_MINUTES}p hoàn tất. Restart toàn bộ tab...\033[0m")
                     for pkg in packages:
                         close_game(pkg)
                     time.sleep(3)
                     
-                    print("\033[1;32m[*] Đang mở lại tất cả các game (Delay 10s/tab)...\033[0m")
                     for idx, pkg in enumerate(packages):
                         open_game(pkg)
                         if idx < len(packages) - 1:
                             time.sleep(CLONE_LAUNCH_DELAY)
-                        
                     start_time = time.time()
 
             if (current_time - last_webhook_time) >= 300:
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = current_time
 
-            for _ in range(4):
+            for _ in range(5):
                 if stop_start: break
-                time.sleep(0.5)
+                time.sleep(1)
 
         if stop_start:
-            print("\n\033[1;31m[!] Đã dừng Start theo yêu cầu. Đang quay lại menu...\033[0m")
+            print("\n\033[1;31m[!] Đã dừng Start. Quay lại menu...\033[0m")
             time.sleep(1.5)
             return
 
@@ -451,7 +368,6 @@ def start_tool():
 def show_banner():
     clear_screen()
     rejoin_mode_str = "Quét Kick/Văng/Mã Lỗi" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
-    
     print("\033[1;35m==================================================\033[0m")
     print(f"\033[1;37m        PAIN TOOL REJOIN VIP ({VERSION})          \033[0m")
     print("\033[1;35m==================================================\033[0m")
@@ -475,14 +391,11 @@ def show_banner():
 
 if __name__ == "__main__":
     authenticate()
-
     while True:
         show_banner()
         choice = input("Chọn chức năng [0-9]: ").strip()
-        
         if choice == "1":
             start_tool()
-            
         elif choice == "2":
             while True:
                 clear_screen()
@@ -491,7 +404,6 @@ if __name__ == "__main__":
                 print("\033[1;37m2. Chọn game\033[0m")
                 print("\033[1;35m3. Quay lại menu chính\033[0m")
                 sub = input("Chọn: ").strip()
-                
                 if sub == "1":
                     clear_screen()
                     print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
@@ -508,7 +420,6 @@ if __name__ == "__main__":
                             DELAY_REJOIN_MINUTES = int(mins)
                             print(f"\033[1;32m[+] Đã cài Delay Rejoin {DELAY_REJOIN_MINUTES} phút!\033[0m")
                     time.sleep(1.5)
-                    
                 elif sub == "2":
                     clear_screen()
                     print("\033[1;35m=== CHỌN GAME ===\033[0m")
@@ -517,7 +428,6 @@ if __name__ == "__main__":
                     print("\033[1;37m3. Grow a gaden 2\033[0m")
                     print("\033[1;37m4. ID/link private\033[0m")
                     game_choice = input("Chọn game [1-4]: ").strip()
-                    
                     if game_choice == "1":
                         TARGET_LINK = "9968396843"
                         SELECTED_GAME_NAME = "Blox fruit"
@@ -531,143 +441,75 @@ if __name__ == "__main__":
                         link = input("Nhập ID game hoặc Link Server VIP: ").strip()
                         if link:
                             TARGET_LINK = link
-                            if link.isdigit():
-                                SELECTED_GAME_NAME = f"Game ID: {link}"
-                                print(f"\033[1;32m[+] Đã nhận Game ID: {link}\033[0m")
-                            else:
-                                SELECTED_GAME_NAME = "Server VIP Custom"
-                                print(f"\033[1;32m[+] Đã nhận Link Server VIP!\033[0m")
+                            SELECTED_GAME_NAME = f"Game ID: {link}" if link.isdigit() else "Server VIP Custom"
+                            print("\033[1;32m[+] Đã nhận link/ID!\033[0m")
                             time.sleep(1.5)
                     time.sleep(1)
                 elif sub == "3":
                     break
-                    
         elif choice == "3":
             clear_screen()
-            print("\033[1;35m=== CÀI ĐẶT PACKAGE PREFIX ===\033[0m")
             pref = input("Nhập Package Prefix (Để trống để giữ mặc định): ").strip()
             if pref:
                 PACKAGE_PREFIX = pref
-            
         elif choice == "4":
             clear_screen()
-            print("\033[1;35m=== ĐỔI ID THIẾT BỊ ===\033[0m")
-            print("\033[1;33m(Yêu cầu máy đã Root hoặc cấp quyền ADB)\033[0m")
             new_id = input("Nhập ID mới (Để trống để tạo ngẫu nhiên): ").strip()
             if not new_id:
                 new_id = "".join(random.choices(string.hexdigits.lower(), k=16))
             run_cmd(["su", "-c", f"settings put secure android_id {new_id}"])
             print(f"\033[1;32m[+] Đã yêu cầu đổi ID thành: {new_id}\033[0m")
             time.sleep(2)
-            
         elif choice == "5":
             clear_screen()
-            print("\033[1;35m=== CÀI ĐẶT WEBHOOK URL ===\033[0m")
             url = input("Nhập Link Discord Webhook (Để trống để xóa): ").strip()
             WEBHOOK_URL = url
             if WEBHOOK_URL:
-                print("\033[1;32m[+] Đã lưu! Đang gửi tin nhắn test chụp màn hình...\033[0m")
-                send_webhook("Mới kích hoạt và gửi đến discord.", with_image=True)
+                print("\033[1;32m[+] Đã lưu Webhook!\033[0m")
             time.sleep(1.5)
-            
         elif choice == "6":
             clear_screen()
-            print("\033[1;35m=== XÓA CACHE TẤT CẢ GAME ===\033[0m")
             packages = get_all_packages()
             for pkg in packages:
-                print(f"[*] Đang dọn cache cho: {pkg}")
                 run_cmd(["su", "-c", f"rm -rf /data/data/{pkg}/cache/*"])
-            print("\033[1;32m[+] Hoàn tất dọn dẹp!\033[0m")
+            print("\033[1;32m[+] Hoàn tất dọn dẹp cache!\033[0m")
             time.sleep(2)
-            
         elif choice == "7":
             clear_screen()
-            print("\033[1;35m=== IMPORT AUTO EXECUTE ===\033[0m")
             script_data = input("Nhập script hack (Để trống để thoát): ").strip()
             if not script_data:
                 continue
-                
             temp_path = "/sdcard/temp_autoexec.lua"
-            try:
-                with open(temp_path, "w", encoding="utf-8") as f:
-                    f.write(script_data)
-            except Exception:
-                run_cmd(["su", "-c", f"echo '{script_data}' > {temp_path}"])
-
+            with open(temp_path, "w", encoding="utf-8") as f:
+                f.write(script_data)
             executor_names = ["Delta", "Codex", "Arceus", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
             autoexec_subdirs = ["autoexec", "Autoexec", "auto-execute", "AutoExecute", "scripts", "Scripts"]
-            
             target_dirs = set()
-
             for name in executor_names:
                 base_dir = f"/sdcard/{name}"
-                if os.path.exists(base_dir) or run_cmd(["su", "-c", f"test -d {base_dir} && echo 1"]) == "1":
-                    found_sub = False
-                    for sub in autoexec_subdirs:
-                        sub_path = f"{base_dir}/{sub}"
-                        if os.path.exists(sub_path) or run_cmd(["su", "-c", f"test -d {sub_path} && echo 1"]) == "1":
-                            target_dirs.add(sub_path)
-                            found_sub = True
-                    if not found_sub:
-                        target_dirs.add(f"{base_dir}/Autoexec")
-
+                target_dirs.add(f"{base_dir}/Autoexec")
             packages = get_all_packages()
             for pkg in packages:
                 target_dirs.add(f"/sdcard/Android/data/{pkg}/files/autoexec")
-                target_dirs.add(f"/sdcard/Android/data/{pkg}/files/Autoexec")
-                target_dirs.add(f"/data/data/{pkg}/autoexec")
-                target_dirs.add(f"/data/data/{pkg}/Autoexec")
-
-            print(f"[*] Đang ghi file script vào {len(target_dirs)} vị trí Autoexec...")
             for target in target_dirs:
                 run_cmd(["mkdir", "-p", target])
-                run_cmd(["su", "-c", f"mkdir -p {target}"])
-                
                 run_cmd(["cp", temp_path, f"{target}/script.lua"])
-                run_cmd(["su", "-c", f"cp {temp_path} {target}/script.lua"])
-
             try:
                 os.remove(temp_path)
             except:
-                run_cmd(["rm", temp_path])
-                
-            print("\033[1;32m[+] Đã lưu script vào tất cả thư mục Autoexec thành công!\033[0m")
-            time.sleep(2.5)
-                
+                pass
+            print("\033[1;32m[+] Đã lưu script Autoexec!\033[0m")
+            time.sleep(2)
         elif choice == "8":
             clear_screen()
-            print(f"\033[1;35m=== MỞ HÀNG LOẠT TAB CLONE ===\033[0m")
-            print(f"\033[1;33m[*] Đang quét các ứng dụng có chứa '{PACKAGE_PREFIX}'...\033[0m")
-            
-            output = run_cmd(["pm", "list", "packages"])
-            found_pkgs = []
-            for line in output.splitlines():
-                if PACKAGE_PREFIX in line:
-                    parts = line.split(":")
-                    if len(parts) > 1:
-                        found_pkgs.append(parts[1].strip())
-            
-            found_pkgs.sort()
-            if not found_pkgs:
-                print(f"\033[1;31m[-] Không tìm thấy ứng dụng nào chứa prefix: {PACKAGE_PREFIX}\033[0m")
-                print(f"\033[1;33m[*] Thử mở gói mặc định: {PACKAGE_PREFIX}\033[0m")
-                found_pkgs = [PACKAGE_PREFIX]
-            else:
-                print(f"\033[1;32m[+] Tìm thấy {len(found_pkgs)} ứng dụng!\033[0m")
-                
+            found_pkgs = get_all_packages()
             for idx, pkg in enumerate(found_pkgs):
-                print(f"[*] [{idx+1}/{len(found_pkgs)}] Đang mở: {pkg}")
                 open_game(pkg)
                 if idx < len(found_pkgs) - 1:
-                    print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s trước khi mở tab tiếp theo...\033[0m")
                     time.sleep(CLONE_LAUNCH_DELAY)
-                    
             print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
             time.sleep(2)
-
         elif choice == "9":
             handle_send_text()
-            
         elif choice == "0":
-            print("\033[1;31mĐã thoát tool. Goodbye!\033[0m")
             sys.exit(0)
