@@ -138,6 +138,21 @@ def send_webhook(message, with_image=False):
     except Exception:
         pass
 
+def get_display_name(user_id):
+    if not user_id or not user_id.isdigit():
+        return "Ẩn danh"
+    try:
+        res = run_cmd([
+            "curl", "-s", "-X", "GET",
+            f"https://discord.com/api/v10/users/{user_id}"
+        ])
+        if res:
+            data = json.loads(res)
+            return data.get("global_name") or data.get("username") or user_id
+    except Exception:
+        pass
+    return user_id
+
 def handle_send_text():
     while True:
         clear_screen()
@@ -149,8 +164,6 @@ def handle_send_text():
             return
             
         discord_id = input("Nhập UID tài khoản Discord (Để trống để bỏ qua): ").strip()
-        
-        ping_text = f"<@{discord_id}>" if discord_id else None
         
         now = datetime.now()
         today_date = now.date()
@@ -170,21 +183,24 @@ def handle_send_text():
         footer_text = f"MADE BY PAIN | {time_display_str}"
         
         if discord_id:
-            name_str = f"User_{discord_id}"
+            print("\033[1;33m[*] Đang nhận diện thông tin người dùng...\033[0m")
+            display_name = get_display_name(discord_id)
             ping_str = f"<@{discord_id}>"
             uid_str = discord_id
+            ping_text = f"<@{discord_id}>"
         else:
-            name_str = "Ẩn danh"
+            display_name = "Ẩn danh"
             ping_str = "Không có"
             uid_str = "Không có"
+            ping_text = None
         
         description_text = (
             "Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
             f"{content_input}\n\n"
             "👤 Thông tin người gửi:\n"
-            f"- Tên người dùng: {name_str}\n"
-            f"- Ping: {ping_str}\n"
-            f"- UID: {uid_str}\n\n"
+            f"• Tên người dùng: **{display_name}**\n"
+            f"• Ping: {ping_str}\n"
+            f"• UID: {uid_str}\n\n"
             "🕐 Thời gian gửi:\n"
             f"{now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
         )
