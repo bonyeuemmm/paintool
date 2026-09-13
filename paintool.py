@@ -139,75 +139,76 @@ def send_webhook(message, with_image=False):
         pass
 
 def handle_send_text():
-    clear_screen()
-    print("\033[1;35m=== SEND TEXT TO DISCORD ===\033[0m")
-    content_input = input("Nhập nội dung muốn gửi: ").strip()
-    if not content_input:
-        print("\033[1;31m[-] Nội dung không được để trống!\033[0m")
-        time.sleep(1.5)
-        return
+    while True:
+        clear_screen()
+        print("\033[1;35m=== SEND TEXT TO DISCORD ===\033[0m")
+        content_input = input("Nhập nội dung muốn gửi (Để trống để thoát): ").strip()
+        if not content_input:
+            print("\033[1;33m[-] Đã thoát về giao diện chính.\033[0m")
+            time.sleep(1)
+            return
+            
+        discord_id = input("Nhập ID tài khoản Discord để ping (Để trống để bỏ qua): ").strip()
         
-    discord_id = input("Nhập ID tài khoản Discord để ping (Để trống để bỏ qua): ").strip()
-    
-    ping_text = f"<@{discord_id}>" if discord_id else None
-    
-    now = datetime.now()
-    today_date = now.date()
-    msg_date = now.date()
-    time_str = now.strftime("%H:%M")
-    
-    delta_days = (today_date - msg_date).days
-    if delta_days == 0:
-        time_display_str = f"hôm nay lúc {time_str}"
-    elif delta_days == 1:
-        time_display_str = f"hôm qua lúc {time_str}"
-    elif msg_date.year == today_date.year:
-        time_display_str = f"{msg_date.strftime('%d/%m')} lúc {time_str}"
-    else:
-        time_display_str = f"{msg_date.strftime('%d/%m/%Y')} lúc {time_str}"
+        ping_text = f"<@{discord_id}>" if discord_id else None
         
-    footer_text = f"MADE BY PAIN | {time_display_str}"
-    
-    user_info_str = f"<@{discord_id}>" if discord_id else "❌ người dùng không xác định"
-    
-    description_text = (
-        f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
-        f"{content_input}\n\n"
-        f"👤 **Thông tin ID người dùng:** 
-        {user_info_str}\n"
-        f"⏱️ **Thời gian đã gửi:** 
-        {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
-    )
-    
-    embed_data = {
-        "username": "Pain REJOIN VIP",
-        "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-        "embeds": [
-            {
-                "description": description_text,
-                "footer": {
-                    "text": footer_text
-                },
-                "color": 65280
-            }
-        ]
-    }
-    
-    if ping_text:
-        embed_data["content"] = ping_text
-    
-    try:
-        payload = json.dumps(embed_data)
-        run_cmd([
-            "curl", "-s", "-X", "POST", CUSTOM_SEND_WEBHOOK,
-            "-H", "Content-Type: application/json",
-            "-d", payload
-        ])
-        print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
-    except Exception as e:
-        print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
+        now = datetime.now()
+        today_date = now.date()
+        msg_date = now.date()
+        time_str = now.strftime("%H:%M")
         
-    time.sleep(2)
+        delta_days = (today_date - msg_date).days
+        if delta_days == 0:
+            time_display_str = f"hôm nay lúc {time_str}"
+        elif delta_days == 1:
+            time_display_str = f"hôm qua lúc {time_str}"
+        elif msg_date.year == today_date.year:
+            time_display_str = f"{msg_date.strftime('%d/%m')} lúc {time_str}"
+        else:
+            time_display_str = f"{msg_date.strftime('%d/%m/%Y')} lúc {time_str}"
+            
+        footer_text = f"MADE BY PAIN | {time_display_str}"
+        
+        user_info_str = f"<@{discord_id}>" if discord_id else "❌ người dùng không xác định"
+        
+        description_text = (
+            f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP\n\n"
+            f"{content_input}\n\n"
+            f"👤 Thông tin ID người dùng:\n"
+            f"{user_info_str}\n\n"
+            f"🕐 Thời gian gửi:\n"
+            f"{now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+        )
+        
+        embed_data = {
+            "username": "Pain REJOIN VIP",
+            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+            "embeds": [
+                {
+                    "description": description_text,
+                    "footer": {
+                        "text": footer_text
+                    },
+                    "color": 65280
+                }
+            ]
+        }
+        
+        if ping_text:
+            embed_data["content"] = ping_text
+        
+        try:
+            payload = json.dumps(embed_data)
+            run_cmd([
+                "curl", "-s", "-X", "POST", CUSTOM_SEND_WEBHOOK,
+                "-H", "Content-Type: application/json",
+                "-d", payload
+            ])
+            print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
+        except Exception as e:
+            print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
+            
+        time.sleep(2)
 
 def get_all_packages():
     output = run_cmd(["pm", "list", "packages"])
