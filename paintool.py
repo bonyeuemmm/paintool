@@ -359,15 +359,17 @@ def open_game(pkg):
 def is_in_target_map(pkg):
     if not TARGET_LINK or not TARGET_LINK.isdigit():
         return True
+    
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    since_time = datetime.now().strftime("%m-%d %H:%M:%S.000")
+    
     if is_root:
-        log_output = run_cmd(["su", "-c", f"logcat -d -t '{since_time}'"], timeout=3)
+        log_output = run_cmd(["su", "-c", "logcat -d -t 100"], timeout=3)
     else:
-        log_output = run_cmd(["logcat", "-d", "-t", since_time], timeout=3)
+        log_output = run_cmd(["logcat", "-d", "-t", "100"], timeout=3)
         
     if not log_output:
-        return True
+        return False
+        
     for line in log_output.splitlines():
         line_lower = line.lower()
         if pkg in line_lower or "roblox" in line_lower:
@@ -376,19 +378,27 @@ def is_in_target_map(pkg):
     return False
 
 def open_game_until_success(pkg):
-    print(f"\033[1;33m[*] Đang spam mở map game cho {pkg} mỗi 2s...\033[0m")
+    print(f"\033[1;33m[*] Đang mở game cho {pkg}...\033[0m")
+    open_game(pkg)
+    
+    print(f"\033[1;33m[*] Đang chờ 5 giây để game khởi chạy...\033[0m")
+    if wait_with_stop_check(5):
+        return
+
     while not stop_start:
-        open_game(pkg)
-        for _ in range(2):
-            if stop_start: break
-            time.sleep(1)
-            
         pid = run_cmd(["pidof", pkg], timeout=3)
         ps_out = run_cmd(["ps", "-A"], timeout=3)
         is_running = bool(pid) or (pkg in ps_out)
         
+        if not is_running:
+            open_game(pkg)
+        
         if is_running and is_in_target_map(pkg):
-            print(f"\033[1;32m[+] Vào map thành công cho {pkg}! Đã tắt spam.\033[0m")
+            print(f"\033[1;32m[+] Vào map thành công cho {pkg}!\033[0m")
+            break
+            
+        print(f"\033[1;36m[*] Đang quét trạng thái map {pkg}... (Thử lại sau 2s)\033[0m")
+        if wait_with_stop_check(2):
             break
 
 def close_game(pkg):
