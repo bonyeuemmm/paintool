@@ -15,8 +15,7 @@ LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 PACKAGE_PREFIX = "com.roblox"
 TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
-# Đặt Webhook mặc định hệ thống
-WEBHOOK_URL = "https://discord.com/api/webhooks/1548235071671238656/sk5oitBIvUXLeYB7phyO-dHkf7NTyuBsqBeQJq2emcyFYTk1ll0dl5-uqg-bhDiINmYV"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1344687747738243163/s4sE7R_60iA2pG_4P125_e3223842_PAIN_DEFAULT_HOOK"
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 AUTO_REJOIN_MODE = 1
@@ -180,6 +179,11 @@ def send_webhook(message, with_image=False):
         pass
 
 def handle_send_text():
+    if not WEBHOOK_URL:
+        print("\033[1;31m[-] Webhook chưa được cấu hình!\033[0m")
+        time.sleep(2)
+        return
+
     while True:
         clear_screen()
         print("\033[1;35m=== SEND TEXT TO DISCORD ===\033[0m")
@@ -403,7 +407,6 @@ def show_banner():
     print(f"\033[1;35m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;35m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
     print(f"\033[1;35m Delay Tab Clone :\033[0m \033[1;37m{CLONE_LAUNCH_DELAY} giây\033[0m")
-    print(f"\033[1;35m Webhook URL     :\033[0m \033[1;37m{'Đã cấu hình' if WEBHOOK_URL else 'Chưa đặt'}\033[0m")
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;35m[1]\033[0m \033[1;37mStart\033[0m")
     print("\033[1;35m[2]\033[0m \033[1;37mSet up\033[0m")
@@ -522,9 +525,10 @@ if __name__ == "__main__":
             time.sleep(2)
         elif choice == "5":
             clear_screen()
-            print("\033[1;35m[*] Đang thử gửi thông báo kèm ảnh màn hình qua Discord Webhook...\033[0m")
+            print("\033[1;35m=== TEST WEBHOOK ===\033[0m")
+            print("\033[1;35m[*] Đang thử gửi thông báo kèm ảnh màn hình qua Webhook...\033[0m")
             send_webhook("Kiểm tra kết nối Webhook từ PAIN TOOL VIP", with_image=True)
-            print("\033[1;32m[+] Đã phát lệnh gửi thông báo thành công!\033[0m")
+            print("\033[1;32m[+] Đã phát lệnh gửi thông báo thử nghiệm thành công!\033[0m")
             time.sleep(2)
         elif choice == "6":
             clear_screen()
