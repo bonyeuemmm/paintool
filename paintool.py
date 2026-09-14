@@ -69,7 +69,7 @@ def print_ascii_banner():
 {PURPLE}██████╔╝███████║██║██╔██╗ ██║ {WHITE}██████╔╝█████╗  ██║██╔██╗ ██║
 {PURPLE}██╔═══╝ ██╔══██║██║██║╚██╗██║ {WHITE}██╔══██╗██╔══╝  ██║██║╚██╗██║
 {PURPLE}██║     ██║  ██║██║██║ ╚████║ {WHITE}██║  ██║███████╗██║██║ ╚████║
-{DEEP_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {DEEP_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝{RESET}"""
+{DEEP_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {DEEP_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═╝{RESET}"""
     print(banner)
 
 def run_cmd(cmd_list, timeout=15):
@@ -381,8 +381,8 @@ def open_game_until_success(pkg):
     print(f"\033[1;33m[*] Đang mở game cho {pkg}...\033[0m")
     open_game(pkg)
     
-    print(f"\033[1;33m[*] Đang chờ 5 giây để game khởi chạy...\033[0m")
-    if wait_with_stop_check(5):
+    print(f"\033[1;33m[*] Đang chờ 10 giây để game khởi chạy...\033[0m")
+    if wait_with_stop_check(10):
         return
 
     while not stop_start:
@@ -397,8 +397,8 @@ def open_game_until_success(pkg):
             print(f"\033[1;32m[+] Vào map thành công cho {pkg}!\033[0m")
             break
             
-        print(f"\033[1;36m[*] Đang quét trạng thái map {pkg}... (Thử lại sau 2s)\033[0m")
-        if wait_with_stop_check(2):
+        print(f"\033[1;36m[*] Đang quét trạng thái map {pkg}... (Thử lại sau 5s)\033[0m")
+        if wait_with_stop_check(5):
             break
 
 def close_game(pkg):
