@@ -18,6 +18,8 @@ SELECTED_GAME_NAME = "Chưa chọn"
 WEBHOOK_URL = ""
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
+DISCORD_LINK = "https://discord.gg/z7RUNArBuJ"
+
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
 CLONE_LAUNCH_DELAY = 10
@@ -30,12 +32,60 @@ def clear_screen():
     os.system('stty sane 2>/dev/null')
     os.system('clear')
 
+def print_ascii_banner():
+    PURPLE = "\033[1;35m"
+    LIGHT_PURPLE = "\033[1;95m"
+    WHITE = "\033[1;37m"
+    RESET = "\033[0m"
+
+    banner = f"""
+{PURPLE}██████╗  █████╗ ██╗███╗   ██╗ {WHITE}██████╗ ███████╗██╗███╗   ██╗
+{PURPLE}██╔══██╗██╔══██╗██║████╗  ██║ {WHITE}██╔══██╗██╔════╝██║████╗  ██║
+{PURPLE}██████╔╝███████║██║██╔██╗ ██║ {WHITE}██████╔╝█████╗  ██║██╔██╗ ██║
+{PURPLE}██╔═══╝ ██╔══██║██║██║╚██╗██║ {WHITE}██╔══██╗██╔══╝  ██║██║╚██╗██║
+{PURPLE}██║     ██║  ██║██║██║ ╚████║ {WHITE}██║  ██║███████╗██║██║ ╚████║
+{LIGHT_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {LIGHT_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝{RESET}"""
+    print(banner)
+
 def run_cmd(cmd_list, timeout=15):
     try:
         res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
         return res.stdout.strip()
     except Exception:
         return ""
+
+def get_system_info():
+    model = run_cmd(["getprop", "ro.product.model"]) or "Android Device"
+    android_ver = run_cmd(["getprop", "ro.build.version.release"]) or "N/A"
+    cpu = run_cmd(["getprop", "ro.board.platform"]) or run_cmd(["getprop", "ro.product.board"]) or "ARM64"
+    
+    ram_info = "N/A"
+    if os.path.exists("/proc/meminfo"):
+        try:
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if "MemTotal" in line:
+                        total_kb = int(line.split()[1])
+                        ram_info = f"{round(total_kb / 1024 / 1024, 1)} GB"
+                        break
+        except Exception:
+            pass
+
+    battery_info = "N/A"
+    dumpsys_bat = run_cmd(["dumpsys", "battery"])
+    if dumpsys_bat:
+        for line in dumpsys_bat.splitlines():
+            if "level:" in line:
+                battery_info = f"{line.split(':')[1].strip()}%"
+                break
+
+    return {
+        "model": model,
+        "android": android_ver,
+        "cpu": cpu,
+        "ram": ram_info,
+        "battery": battery_info
+    }
 
 def get_hwid():
     hwid = run_cmd(["settings", "get", "secure", "android_id"])
@@ -88,8 +138,9 @@ def authenticate():
 
     while True:
         clear_screen()
+        print_ascii_banner()
         print("\033[1;35m==================================================\033[0m")
-        print(f"\033[1;37m       PAIN TOOL REJOIN VIP ({VERSION}) - XÁC THỰC       \033[0m")
+        print(f"\033[1;37m                 XÁC THỰC BẢN QUYỀN               \033[0m")
         print("\033[1;35m==================================================\033[0m")
         print(f"\033[1;36m HWID hiện tại: {hwid}\033[0m")
         input_key = input("Nhập Key (0 để thoát): ").strip()
@@ -119,7 +170,7 @@ def send_webhook(message, with_image=False):
         now = datetime.now()
         footer_text = "MADE BY PAIN"
         packages = get_all_packages()
-        rejoin_mode_str = "Lọc Log Thời Gian Thực" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+        rejoin_mode_str = "Auto rejoin vang/kicked" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
         start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
         
         description_text = (
@@ -251,6 +302,18 @@ def open_game(pkg):
     else:
         run_cmd(cmd.split())
 
+def open_game_until_success(pkg):
+    print(f"\033[1;33m[*] Đang mở map game cho {pkg}...\033[0m")
+    while not stop_start:
+        open_game(pkg)
+        time.sleep(2)
+        
+        pid = run_cmd(["pidof", pkg], timeout=3)
+        ps_out = run_cmd(["ps", "-A"], timeout=3)
+        if pid or (pkg in ps_out):
+            print(f"\033[1;32m[+] Vào map thành công cho {pkg}!\033[0m")
+            break
+
 def close_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
     cmd_kill = f"am kill {pkg}"
@@ -301,6 +364,7 @@ def listen_for_stop():
 def start_tool():
     global stop_start, START_UP_TIME
     clear_screen()
+    print_ascii_banner()
     packages = get_all_packages()
     START_UP_TIME = datetime.now()
     
@@ -314,7 +378,7 @@ def start_tool():
 
     for idx, pkg in enumerate(packages):
         print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
-        open_game(pkg)
+        open_game_until_success(pkg)
         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
         if idx < len(packages) - 1:
             print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
@@ -347,7 +411,7 @@ def start_tool():
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang kích hoạt lại...\033[0m")
                         close_game(pkg)
                         time.sleep(2)
-                        open_game(pkg)
+                        open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         print(f"\033[1;32m[+] Đã mở lại {pkg}. Chờ 15s để ổn định...\033[0m")
                         time.sleep(15)
@@ -359,7 +423,7 @@ def start_tool():
                             print(f"\033[1;33m[-] Phát hiện {pkg} [{error_msg}]! Đang Rejoin...\033[0m")
                             close_game(pkg)
                             time.sleep(3)
-                            open_game(pkg)
+                            open_game_until_success(pkg)
                             last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                             print(f"\033[1;32m[+] Đã Rejoin {pkg}. Chờ 15s để ổn định...\033[0m")
                             time.sleep(15)
@@ -372,7 +436,7 @@ def start_tool():
                     time.sleep(3)
                     
                     for idx, pkg in enumerate(packages):
-                        open_game(pkg)
+                        open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         if idx < len(packages) - 1:
                             time.sleep(CLONE_LAUNCH_DELAY)
@@ -399,14 +463,27 @@ def start_tool():
 
 def show_banner():
     clear_screen()
-    rejoin_mode_str = "Quét Lỗi Thời Gian Thực (Chính Xác)" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
-    print("\033[1;35m==================================================\033[0m")
-    print(f"\033[1;37m        PAIN TOOL REJOIN VIP ({VERSION})          \033[0m")
-    print("\033[1;35m==================================================\033[0m")
+    print_ascii_banner()
+    
+    sys_info = get_system_info()
+    rejoin_mode_str = "Auto rejoin vang/kicked" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+    
+    print("\033[1;35m--------------------------------------------------\033[0m")
+    print("\033[1;37m             PAIN TOOL REJOIN VIP                \033[0m")
+    print("\033[1;35m--------------------------------------------------\033[0m")
+    print(" \033[1;33mMADE BY       :\033[0m \033[1;37mPAIN GAMER\033[0m")
+    print(f" \033[1;33mDISCORD       :\033[0m \033[1;36m{DISCORD_LINK}\033[0m")
+    print(f" \033[1;33mVERSION       :\033[0m \033[1;32m{VERSION}\033[0m")
+    print("\033[1;35m--------------------------------------------------\033[0m")
+    print(" \033[1;35m[ THÔNG TIN THIẾT BỊ ]\033[0m")
+    print(f" \033[1;37m• Thiết bị    :\033[0m {sys_info['model']} (Android {sys_info['android']})")
+    print(f" \033[1;37m• Chip / CPU  :\033[0m {sys_info['cpu']}")
+    print(f" \033[1;37m• Tổng RAM    :\033[0m {sys_info['ram']}")
+    print(f" \033[1;37m• Dung lượng  :\033[0m {sys_info['battery']}")
+    print("\033[1;35m--------------------------------------------------\033[0m")
     print(f"\033[1;35m Package Prefix  :\033[0m \033[1;37m{PACKAGE_PREFIX}\033[0m")
     print(f"\033[1;35m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;35m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
-    print(f"\033[1;35m Delay Tab Clone :\033[0m \033[1;37m{CLONE_LAUNCH_DELAY} giây\033[0m")
     print(f"\033[1;35m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;35m[1]\033[0m \033[1;37mStart\033[0m")
@@ -439,12 +516,12 @@ if __name__ == "__main__":
                 if sub == "1":
                     clear_screen()
                     print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Auto rejoin khi văng/kicked/mã lỗi (Lọc thời gian)\033[0m")
+                    print("\033[1;37m1. Auto rejoin vang/kicked\033[0m")
                     print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
                     mode = input("Chọn cơ chế [1/2]: ").strip()
                     if mode == "1":
                         AUTO_REJOIN_MODE = 1
-                        print("\033[1;32m[+] Đã chọn Auto Rejoin lọc thời gian chuẩn!\033[0m")
+                        print("\033[1;32m[+] Đã chọn Auto rejoin vang/kicked!\033[0m")
                     elif mode == "2":
                         AUTO_REJOIN_MODE = 2
                         mins = input("Nhập thời gian chu kỳ (phút): ").strip()
@@ -572,7 +649,7 @@ if __name__ == "__main__":
             clear_screen()
             found_pkgs = get_all_packages()
             for idx, pkg in enumerate(found_pkgs):
-                open_game(pkg)
+                open_game_until_success(pkg)
                 if idx < len(found_pkgs) - 1:
                     time.sleep(CLONE_LAUNCH_DELAY)
             print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
