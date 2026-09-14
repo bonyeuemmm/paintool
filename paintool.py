@@ -34,7 +34,7 @@ def clear_screen():
 
 def print_ascii_banner():
     PURPLE = "\033[1;35m"
-    LIGHT_PURPLE = "\033[1;95m"
+    DEEP_PURPLE = "\033[0;35m"
     WHITE = "\033[1;37m"
     RESET = "\033[0m"
 
@@ -44,7 +44,7 @@ def print_ascii_banner():
 {PURPLE}██████╔╝███████║██║██╔██╗ ██║ {WHITE}██████╔╝█████╗  ██║██╔██╗ ██║
 {PURPLE}██╔═══╝ ██╔══██║██║██║╚██╗██║ {WHITE}██╔══██╗██╔══╝  ██║██║╚██╗██║
 {PURPLE}██║     ██║  ██║██║██║ ╚████║ {WHITE}██║  ██║███████╗██║██║ ╚████║
-{LIGHT_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {LIGHT_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝{RESET}"""
+{DEEP_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {DEEP_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝{RESET}"""
     print(banner)
 
 def run_cmd(cmd_list, timeout=15):
@@ -124,7 +124,7 @@ def authenticate():
             with open(LICENSE_FILE, "r") as f:
                 input_key = f.read().strip()
             if input_key:
-                print("\033[1;35m[*] Đang kiểm tra Key đã lưu...\033[0m")
+                print("\033[1;32m[*] Đang kiểm tra Key đã lưu...\033[0m")
                 is_valid, _ = check_license_curl(input_key, hwid)
                 if is_valid:
                     print("\033[1;32m[+] Tự động xác thực bản quyền thành công!\033[0m")
@@ -139,16 +139,16 @@ def authenticate():
     while True:
         clear_screen()
         print_ascii_banner()
-        print("\033[1;35m==================================================\033[0m")
+        print("\033[1;32m==================================================\033[0m")
         print(f"\033[1;37m                 XÁC THỰC BẢN QUYỀN               \033[0m")
-        print("\033[1;35m==================================================\033[0m")
+        print("\033[1;32m==================================================\033[0m")
         print(f"\033[1;36m HWID hiện tại: {hwid}\033[0m")
         input_key = input("Nhập Key (0 để thoát): ").strip()
         if input_key in ["exit", "0"]:
             sys.exit(0)
         if not input_key:
             continue
-        print("\033[1;35m[*] Đang kết nối máy chủ...\033[0m")
+        print("\033[1;32m[*] Đang kết nối máy chủ...\033[0m")
         is_valid, response_text = check_license_curl(input_key, hwid)
         if is_valid:
             try:
@@ -237,7 +237,7 @@ def handle_send_text():
 
     while True:
         clear_screen()
-        print("\033[1;35m=== SEND TEXT TO DISCORD ===\033[0m")
+        print("\033[1;32m=== SEND TEXT TO DISCORD ===\033[0m")
         content_input = input("Nhập nội dung muốn gửi (Để trống để thoát): ").strip()
         if not content_input:
             print("\033[1;33m[-] Đã thoát về giao diện chính.\033[0m")
@@ -371,7 +371,7 @@ def start_tool():
     last_launch_timestamp = {}
     
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
-    print(f"\033[1;35m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
+    print(f"\033[1;32m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
     print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter để ngắt Start.\033[0m")
     print("--------------------------------------------------")
@@ -468,35 +468,35 @@ def show_banner():
     sys_info = get_system_info()
     rejoin_mode_str = "Auto rejoin vang/kicked" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
-    print("\033[1;35m--------------------------------------------------\033[0m")
+    print("\033[1;32m--------------------------------------------------\033[0m")
     print("\033[1;37m             PAIN TOOL REJOIN VIP                \033[0m")
-    print("\033[1;35m--------------------------------------------------\033[0m")
+    print("\033[1;32m--------------------------------------------------\033[0m")
     print(" \033[1;33mMADE BY       :\033[0m \033[1;37mPAIN GAMER\033[0m")
     print(f" \033[1;33mDISCORD       :\033[0m \033[1;36m{DISCORD_LINK}\033[0m")
     print(f" \033[1;33mVERSION       :\033[0m \033[1;32m{VERSION}\033[0m")
-    print("\033[1;35m--------------------------------------------------\033[0m")
-    print(" \033[1;35m[ THÔNG TIN THIẾT BỊ ]\033[0m")
+    print("\033[1;32m--------------------------------------------------\033[0m")
+    print(" \033[1;32m[ THÔNG TIN THIẾT BỊ ]\033[0m")
     print(f" \033[1;37m• Thiết bị    :\033[0m {sys_info['model']} (Android {sys_info['android']})")
     print(f" \033[1;37m• Chip / CPU  :\033[0m {sys_info['cpu']}")
     print(f" \033[1;37m• Tổng RAM    :\033[0m {sys_info['ram']}")
     print(f" \033[1;37m• Dung lượng  :\033[0m {sys_info['battery']}")
-    print("\033[1;35m--------------------------------------------------\033[0m")
-    print(f"\033[1;35m Package Prefix  :\033[0m \033[1;37m{PACKAGE_PREFIX}\033[0m")
-    print(f"\033[1;35m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
-    print(f"\033[1;35m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
-    print(f"\033[1;35m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
-    print("\033[1;35m==================================================\033[0m")
-    print("\033[1;35m[1]\033[0m \033[1;37mStart\033[0m")
-    print("\033[1;35m[2]\033[0m \033[1;37mSet up\033[0m")
-    print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
-    print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
-    print("\033[1;35m[5]\033[0m \033[1;37mSet Webhook URL\033[0m")
-    print("\033[1;35m[6]\033[0m \033[1;37mXóa cache\033[0m")
-    print("\033[1;35m[7]\033[0m \033[1;37mImport auto execute\033[0m")
-    print("\033[1;35m[8]\033[0m \033[1;37mMở tab clone\033[0m")
-    print("\033[1;35m[9]\033[0m \033[1;37mSEND TEXT\033[0m")
+    print("\033[1;32m--------------------------------------------------\033[0m")
+    print(f"\033[1;32m Package Prefix  :\033[0m \033[1;37m{PACKAGE_PREFIX}\033[0m")
+    print(f"\033[1;32m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
+    print(f"\033[1;32m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
+    print(f"\033[1;32m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
+    print("\033[1;32m==================================================\033[0m")
+    print("\033[1;32m[1]\033[0m \033[1;37mStart\033[0m")
+    print("\033[1;32m[2]\033[0m \033[1;37mSet up\033[0m")
+    print("\033[1;32m[3]\033[0m \033[1;37mPackage prefix\033[0m")
+    print("\033[1;32m[4]\033[0m \033[1;37mChange id\033[0m")
+    print("\033[1;32m[5]\033[0m \033[1;37mSet Webhook URL\033[0m")
+    print("\033[1;32m[6]\033[0m \033[1;37mXóa cache\033[0m")
+    print("\033[1;32m[7]\033[0m \033[1;37mImport auto execute\033[0m")
+    print("\033[1;32m[8]\033[0m \033[1;37mMở tab clone\033[0m")
+    print("\033[1;32m[9]\033[0m \033[1;37mSEND TEXT\033[0m")
     print("\033[1;31m[0] Exit\033[0m")
-    print("\033[1;35m==================================================\033[0m")
+    print("\033[1;32m==================================================\033[0m")
 
 if __name__ == "__main__":
     authenticate()
@@ -508,14 +508,14 @@ if __name__ == "__main__":
         elif choice == "2":
             while True:
                 clear_screen()
-                print("\033[1;35m=== SET UP ===\033[0m")
+                print("\033[1;32m=== SET UP ===\033[0m")
                 print("\033[1;37m1. Set up auto rejoin\033[0m")
                 print("\033[1;37m2. Chọn game\033[0m")
-                print("\033[1;35m0. Quay lại menu chính\033[0m")
+                print("\033[1;32m0. Quay lại menu chính\033[0m")
                 sub = input("Chọn: ").strip()
                 if sub == "1":
                     clear_screen()
-                    print("\033[1;35m=== SET UP AUTO REJOIN ===\033[0m")
+                    print("\033[1;32m=== SET UP AUTO REJOIN ===\033[0m")
                     print("\033[1;37m1. Auto rejoin vang/kicked\033[0m")
                     print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
                     mode = input("Chọn cơ chế [1/2]: ").strip()
@@ -531,7 +531,7 @@ if __name__ == "__main__":
                     time.sleep(1.5)
                 elif sub == "2":
                     clear_screen()
-                    print("\033[1;35m=== CHỌN GAME ===\033[0m")
+                    print("\033[1;32m=== CHỌN GAME ===\033[0m")
                     print("\033[1;37m1. Blox Fruit\033[0m")
                     print("\033[1;37m2. Grow a Garden\033[0m")
                     print("\033[1;37m3. Grow a Garden 2\033[0m")
@@ -603,7 +603,7 @@ if __name__ == "__main__":
             time.sleep(2)
         elif choice == "5":
             clear_screen()
-            print("\033[1;35m=== SET WEBHOOK URL ===\033[0m")
+            print("\033[1;32m=== SET WEBHOOK URL ===\033[0m")
             if WEBHOOK_URL:
                 print(f"Webhook hiện tại: {WEBHOOK_URL[:35]}...")
             new_webhook = input("Nhập URL Discord Webhook (Để trống để xóa Webhook): ").strip()
@@ -648,11 +648,18 @@ if __name__ == "__main__":
         elif choice == "8":
             clear_screen()
             found_pkgs = get_all_packages()
+            print(f"\033[1;32m[*] Đang mở hàng loạt tab...\033[0m")
             for idx, pkg in enumerate(found_pkgs):
-                open_game_until_success(pkg)
+                is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+                cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+                if is_root:
+                    run_cmd(["su", "-c", cmd])
+                else:
+                    run_cmd(cmd.split())
+                print(f"\033[1;32m[+] Đã mở package: {pkg}\033[0m")
                 if idx < len(found_pkgs) - 1:
                     time.sleep(CLONE_LAUNCH_DELAY)
-            print("\033[1;32m[+] Hoàn tất mở tab clone!\033[0m")
+            print("\033[1;32m[+] Hoàn tất mở các tab clone!\033[0m")
             time.sleep(2)
         elif choice == "9":
             handle_send_text()
