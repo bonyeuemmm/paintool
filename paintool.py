@@ -8,14 +8,14 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.3-TimeFilter"
+VERSION = "v1.2.3-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 
 PACKAGE_PREFIX = "com.roblox"
 TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
-WEBHOOK_URL = "https://discord.com/api/webhooks/1344687747738243163/s4sE7R_60iA2pG_4P125_e3223842_PAIN_DEFAULT_HOOK"
+WEBHOOK_URL = ""
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 AUTO_REJOIN_MODE = 1
@@ -407,12 +407,13 @@ def show_banner():
     print(f"\033[1;35m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;35m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
     print(f"\033[1;35m Delay Tab Clone :\033[0m \033[1;37m{CLONE_LAUNCH_DELAY} giây\033[0m")
+    print(f"\033[1;35m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
     print("\033[1;35m==================================================\033[0m")
     print("\033[1;35m[1]\033[0m \033[1;37mStart\033[0m")
     print("\033[1;35m[2]\033[0m \033[1;37mSet up\033[0m")
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
-    print("\033[1;35m[5]\033[0m \033[1;37mTest Webhook\033[0m")
+    print("\033[1;35m[5]\033[0m \033[1;37mSet Webhook URL\033[0m")
     print("\033[1;35m[6]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -525,10 +526,15 @@ if __name__ == "__main__":
             time.sleep(2)
         elif choice == "5":
             clear_screen()
-            print("\033[1;35m=== TEST WEBHOOK ===\033[0m")
-            print("\033[1;35m[*] Đang thử gửi thông báo kèm ảnh màn hình qua Webhook...\033[0m")
-            send_webhook("Kiểm tra kết nối Webhook từ PAIN TOOL VIP", with_image=True)
-            print("\033[1;32m[+] Đã phát lệnh gửi thông báo thử nghiệm thành công!\033[0m")
+            print("\033[1;35m=== SET WEBHOOK URL ===\033[0m")
+            if WEBHOOK_URL:
+                print(f"Webhook hiện tại: {WEBHOOK_URL[:35]}...")
+            new_webhook = input("Nhập URL Discord Webhook (Để trống để xóa Webhook): ").strip()
+            WEBHOOK_URL = new_webhook
+            if WEBHOOK_URL:
+                print("\033[1;32m[+] Đã cập nhật Webhook thành công!\033[0m")
+            else:
+                print("\033[1;33m[-] Đã xóa Webhook. Tool sẽ chạy không có thông báo.\033[0m")
             time.sleep(2)
         elif choice == "6":
             clear_screen()
