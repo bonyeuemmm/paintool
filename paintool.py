@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.4-Beta"
+VERSION = "v1.2.5-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -356,16 +356,39 @@ def open_game(pkg):
     else:
         run_cmd(cmd.split())
 
+def is_in_target_map(pkg):
+    if not TARGET_LINK or not TARGET_LINK.isdigit():
+        return True
+    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+    since_time = datetime.now().strftime("%m-%d %H:%M:%S.000")
+    if is_root:
+        log_output = run_cmd(["su", "-c", f"logcat -d -t '{since_time}'"], timeout=3)
+    else:
+        log_output = run_cmd(["logcat", "-d", "-t", since_time], timeout=3)
+        
+    if not log_output:
+        return True
+    for line in log_output.splitlines():
+        line_lower = line.lower()
+        if pkg in line_lower or "roblox" in line_lower:
+            if f"placeid={TARGET_LINK}" in line_lower or f"placeid:{TARGET_LINK}" in line_lower or f"place {TARGET_LINK}" in line_lower:
+                return True
+    return False
+
 def open_game_until_success(pkg):
-    print(f"\033[1;33m[*] Đang mở map game cho {pkg}...\033[0m")
+    print(f"\033[1;33m[*] Đang spam mở map game cho {pkg} mỗi 2s...\033[0m")
     while not stop_start:
         open_game(pkg)
-        time.sleep(2)
-        
+        for _ in range(2):
+            if stop_start: break
+            time.sleep(1)
+            
         pid = run_cmd(["pidof", pkg], timeout=3)
         ps_out = run_cmd(["ps", "-A"], timeout=3)
-        if pid or (pkg in ps_out):
-            print(f"\033[1;32m[+] Vào map thành công cho {pkg}!\033[0m")
+        is_running = bool(pid) or (pkg in ps_out)
+        
+        if is_running and is_in_target_map(pkg):
+            print(f"\033[1;32m[+] Vào map thành công cho {pkg}! Đã tắt spam.\033[0m")
             break
 
 def close_game(pkg):
@@ -415,6 +438,15 @@ def listen_for_stop():
         except:
             break
 
+def wait_with_stop_check(seconds, message=""):
+    if message:
+        print(message)
+    for _ in range(seconds):
+        if stop_start:
+            return True
+        time.sleep(1)
+    return False
+
 def start_tool():
     global stop_start, START_UP_TIME
     clear_screen()
@@ -447,7 +479,7 @@ def start_tool():
                 last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
             if i + batch_size < total_clones and not stop_start:
                 print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
-                time.sleep(15)
+                if wait_with_stop_check(15): break
     else:
         for idx, pkg in enumerate(packages):
             if stop_start: break
@@ -456,7 +488,7 @@ def start_tool():
             last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
             if idx < len(packages) - 1:
                 print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
-                time.sleep(CLONE_LAUNCH_DELAY)
+                if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
 
     if not stop_start:
         send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
@@ -491,27 +523,33 @@ def start_tool():
                     is_running = bool(pid) or (pkg in ps_out)
 
                     if not is_running:
-                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang kích hoạt lại...\033[0m")
+                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Chờ 5s trước khi Rejoin (Gõ 0 để hủy)...\033[0m")
+                        if wait_with_stop_check(5): break
+                        
                         send_detailed_alert(f"Tab {pkg} bị văng/đóng hoàn toàn! Tool đang tiến hành tự động mở lại.")
                         close_game(pkg)
-                        time.sleep(2)
+                        time.sleep(1)
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         print(f"\033[1;32m[+] Đã mở lại {pkg}. Chờ 15s để ổn định...\033[0m")
-                        time.sleep(15)
+                        if wait_with_stop_check(15): break
                     else:
                         since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                         has_error, error_msg = check_package_error_since(pkg, since_time)
+                        in_map = is_in_target_map(pkg)
                         
-                        if has_error:
-                            print(f"\033[1;33m[-] Phát hiện {pkg} [{error_msg}]! Đang Rejoin...\033[0m")
-                            send_detailed_alert(f"Phát hiện lỗi trên {pkg}: [{error_msg}]. Tool đang thực hiện Rejoin.")
+                        if has_error or not in_map:
+                            reason_str = error_msg if has_error else "Không ở trong Map Game đã chọn"
+                            print(f"\033[1;33m[-] Phát hiện {pkg} [{reason_str}]! Chờ 5s trước khi Rejoin (Gõ 0 để hủy)...\033[0m")
+                            if wait_with_stop_check(5): break
+                            
+                            send_detailed_alert(f"Phát hiện lỗi trên {pkg}: [{reason_str}]. Tool đang thực hiện Rejoin.")
                             close_game(pkg)
-                            time.sleep(3)
+                            time.sleep(2)
                             open_game_until_success(pkg)
                             last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                             print(f"\033[1;32m[+] Đã Rejoin {pkg}. Chờ 15s để ổn định...\033[0m")
-                            time.sleep(15)
+                            if wait_with_stop_check(15): break
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
@@ -531,14 +569,14 @@ def start_tool():
                                 open_game_until_success(pkg)
                                 last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                             if i + batch_size < total_clones and not stop_start:
-                                time.sleep(15)
+                                if wait_with_stop_check(15): break
                     else:
                         for idx, pkg in enumerate(packages):
                             if stop_start: break
                             open_game_until_success(pkg)
                             last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                             if idx < len(packages) - 1:
-                                time.sleep(CLONE_LAUNCH_DELAY)
+                                if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
                     start_time = time.time()
 
             if (time.time() - last_webhook_time) >= 300:
@@ -546,9 +584,7 @@ def start_tool():
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = time.time()
 
-            for _ in range(3):
-                if stop_start: break
-                time.sleep(1)
+            if wait_with_stop_check(3): break
 
         if stop_start:
             print("\n\033[1;31m[!] Đã dừng Start. Quay lại menu...\033[0m")
