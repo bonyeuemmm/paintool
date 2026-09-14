@@ -15,9 +15,9 @@ LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 PACKAGE_PREFIX = "com.roblox"
 TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
-WEBHOOK_URL = ""
+# Đặt Webhook mặc định hệ thống
+WEBHOOK_URL = "https://discord.com/api/webhooks/1548235071671238656/sk5oitBIvUXLeYB7phyO-dHkf7NTyuBsqBeQJq2emcyFYTk1ll0dl5-uqg-bhDiINmYV"
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
-CUSTOM_SEND_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5oitBIvUXLeYB7phyO-dHkf7NTyuBsqBeQJq2emcyFYTk1ll0dl5-uqg-bhDiINmYV"
 
 AUTO_REJOIN_MODE = 1
 DELAY_REJOIN_MINUTES = 1
@@ -118,8 +118,7 @@ def send_webhook(message, with_image=False):
         return
     try:
         now = datetime.now()
-        time_display_str = f"hôm nay lúc {now.strftime('%H:%M')}"
-        footer_text = f"MADE BY PAIN | {time_display_str}"
+        footer_text = "MADE BY PAIN"
         packages = get_all_packages()
         rejoin_mode_str = "Lọc Log Thời Gian Thực" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
         start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
@@ -192,7 +191,7 @@ def handle_send_text():
             
         discord_id = input("Nhập UID tài khoản Discord (Để trống để bỏ qua): ").strip()
         now = datetime.now()
-        footer_text = f"MADE BY PAIN | hôm nay lúc {now.strftime('%H:%M')}"
+        footer_text = "MADE BY PAIN"
         
         user_tag_str = f"<@{discord_id}>" if discord_id else "Ẩn danh"
         uid_str = discord_id if discord_id else "Không có"
@@ -217,7 +216,7 @@ def handle_send_text():
         
         try:
             payload = json.dumps(embed_data)
-            run_cmd(["curl", "-s", "-X", "POST", CUSTOM_SEND_WEBHOOK, "-H", "Content-Type: application/json", "-d", payload])
+            run_cmd(["curl", "-s", "-X", "POST", WEBHOOK_URL, "-H", "Content-Type: application/json", "-d", payload])
             print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
         except Exception as e:
             print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
@@ -261,7 +260,6 @@ def close_game(pkg):
         run_cmd(cmd_force.split())
 
 def check_package_error_since(pkg, since_time_str):
-    """Chỉ đọc log xuất hiện SAU mốc thời gian since_time_str (Format: 'MM-DD HH:MM:SS.mmm')"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
     
     cmd = ["logcat", "-d", "-t", since_time_str]
@@ -350,7 +348,6 @@ def start_tool():
                         print(f"\033[1;32m[+] Đã mở lại {pkg}. Chờ 15s để ổn định...\033[0m")
                         time.sleep(15)
                     else:
-                        # TH2: Game đang chạy -> Chỉ kiểm tra Log phát sinh SAU THỜI ĐIỂM BẬT TAB
                         since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                         has_error, error_msg = check_package_error_since(pkg, since_time)
                         
@@ -412,7 +409,7 @@ def show_banner():
     print("\033[1;35m[2]\033[0m \033[1;37mSet up\033[0m")
     print("\033[1;35m[3]\033[0m \033[1;37mPackage prefix\033[0m")
     print("\033[1;35m[4]\033[0m \033[1;37mChange id\033[0m")
-    print("\033[1;35m[5]\033[0m \033[1;37mUrl webhook\033[0m")
+    print("\033[1;35m[5]\033[0m \033[1;37mTest Webhook\033[0m")
     print("\033[1;35m[6]\033[0m \033[1;37mXóa cache\033[0m")
     print("\033[1;35m[7]\033[0m \033[1;37mImport auto execute\033[0m")
     print("\033[1;35m[8]\033[0m \033[1;37mMở tab clone\033[0m")
@@ -433,7 +430,7 @@ if __name__ == "__main__":
                 print("\033[1;35m=== SET UP ===\033[0m")
                 print("\033[1;37m1. Set up auto rejoin\033[0m")
                 print("\033[1;37m2. Chọn game\033[0m")
-                print("\033[1;35m3. Quay lại menu chính\033[0m")
+                print("\033[1;35m0. Quay lại menu chính\033[0m")
                 sub = input("Chọn: ").strip()
                 if sub == "1":
                     clear_screen()
@@ -454,21 +451,53 @@ if __name__ == "__main__":
                 elif sub == "2":
                     clear_screen()
                     print("\033[1;35m=== CHỌN GAME ===\033[0m")
-                    print("\033[1;37m1. Blox fruit\033[0m")
-                    print("\033[1;37m2. Grow a gaden\033[0m")
-                    print("\033[1;37m3. Grow a gaden 2\033[0m")
-                    print("\033[1;37m4. ID/link private\033[0m")
-                    game_choice = input("Chọn game [1-4]: ").strip()
+                    print("\033[1;37m1. Blox Fruit\033[0m")
+                    print("\033[1;37m2. Grow a Garden\033[0m")
+                    print("\033[1;37m3. Grow a Garden 2\033[0m")
+                    print("\033[1;37m4. Blade Ball\033[0m")
+                    print("\033[1;37m5. King Legacy\033[0m")
+                    print("\033[1;37m6. Fisch\033[0m")
+                    print("\033[1;37m7. Pet Simulator 99\033[0m")
+                    print("\033[1;37m8. Anime Vanguards\033[0m")
+                    print("\033[1;37m9. 99 Nights in the Forest\033[0m")
+                    print("\033[1;37m10. Steal a Brainrot\033[0m")
+                    print("\033[1;37m11. Steal An Egg\033[0m")
+                    print("\033[1;37m12. Custom ID / Private Link\033[0m")
+                    game_choice = input("Chọn game [1-12]: ").strip()
                     if game_choice == "1":
-                        TARGET_LINK = "9968396843"
-                        SELECTED_GAME_NAME = "Blox fruit"
+                        TARGET_LINK = "2753915549"
+                        SELECTED_GAME_NAME = "Blox Fruit"
                     elif game_choice == "2":
-                        TARGET_LINK = "11790933930"
-                        SELECTED_GAME_NAME = "Grow a gaden"
+                        TARGET_LINK = "126884695634066"
+                        SELECTED_GAME_NAME = "Grow a Garden"
                     elif game_choice == "3":
-                        TARGET_LINK = "11790933930"
-                        SELECTED_GAME_NAME = "Grow a gaden 2"
+                        TARGET_LINK = "97598239454123"
+                        SELECTED_GAME_NAME = "Grow a Garden 2"
                     elif game_choice == "4":
+                        TARGET_LINK = "13772394625"
+                        SELECTED_GAME_NAME = "Blade Ball"
+                    elif game_choice == "5":
+                        TARGET_LINK = "4520749081"
+                        SELECTED_GAME_NAME = "King Legacy"
+                    elif game_choice == "6":
+                        TARGET_LINK = "16732694052"
+                        SELECTED_GAME_NAME = "Fisch"
+                    elif game_choice == "7":
+                        TARGET_LINK = "8737899170"
+                        SELECTED_GAME_NAME = "Pet Simulator 99"
+                    elif game_choice == "8":
+                        TARGET_LINK = "16146832113"
+                        SELECTED_GAME_NAME = "Anime Vanguards"
+                    elif game_choice == "9":
+                        TARGET_LINK = "79546208627805"
+                        SELECTED_GAME_NAME = "99 Nights in the Forest"
+                    elif game_choice == "10":
+                        TARGET_LINK = "109983668079237"
+                        SELECTED_GAME_NAME = "Steal a Brainrot"
+                    elif game_choice == "11":
+                        TARGET_LINK = "107778070777162"
+                        SELECTED_GAME_NAME = "Steal An Egg"
+                    elif game_choice == "12":
                         link = input("Nhập ID game hoặc Link Server VIP: ").strip()
                         if link:
                             TARGET_LINK = link
@@ -476,7 +505,7 @@ if __name__ == "__main__":
                             print("\033[1;32m[+] Đã nhận link/ID!\033[0m")
                             time.sleep(1.5)
                     time.sleep(1)
-                elif sub == "3":
+                elif sub == "0":
                     break
         elif choice == "3":
             clear_screen()
@@ -493,11 +522,10 @@ if __name__ == "__main__":
             time.sleep(2)
         elif choice == "5":
             clear_screen()
-            url = input("Nhập Link Discord Webhook (Để trống để xóa): ").strip()
-            WEBHOOK_URL = url
-            if WEBHOOK_URL:
-                print("\033[1;32m[+] Đã lưu Webhook!\033[0m")
-            time.sleep(1.5)
+            print("\033[1;35m[*] Đang thử gửi thông báo kèm ảnh màn hình qua Discord Webhook...\033[0m")
+            send_webhook("Kiểm tra kết nối Webhook từ PAIN TOOL VIP", with_image=True)
+            print("\033[1;32m[+] Đã phát lệnh gửi thông báo thành công!\033[0m")
+            time.sleep(2)
         elif choice == "6":
             clear_screen()
             packages = get_all_packages()
@@ -514,7 +542,6 @@ if __name__ == "__main__":
             with open(temp_path, "w", encoding="utf-8") as f:
                 f.write(script_data)
             executor_names = ["Delta", "Codex", "Arceus", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
-            autoexec_subdirs = ["autoexec", "Autoexec", "auto-execute", "AutoExecute", "scripts", "Scripts"]
             target_dirs = set()
             for name in executor_names:
                 base_dir = f"/sdcard/{name}"
