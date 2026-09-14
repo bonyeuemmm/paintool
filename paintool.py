@@ -302,7 +302,6 @@ def start_tool():
     packages = get_all_packages()
     START_UP_TIME = datetime.now()
     
-    # Lưu mốc thời điểm mở game để chỉ đọc log sinh ra sau thời điểm này
     last_launch_timestamp = {}
     
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
@@ -342,7 +341,6 @@ def start_tool():
                     ps_out = run_cmd(["ps", "-A"], timeout=5)
                     is_running = bool(pid) or (pkg in ps_out)
 
-                    # TH1: Mất tiến trình hoàn toàn (Văng / Crash)
                     if not is_running:
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang kích hoạt lại...\033[0m")
                         close_game(pkg)
