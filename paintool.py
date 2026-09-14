@@ -584,7 +584,6 @@ def show_banner():
     print(f"\033[1;32m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;32m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
     print(f"\033[1;32m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
-    print(f"\033[1;32m Discord UID     :\033[0m \033[1;37m{DISCORD_UID if DISCORD_UID else 'Chưa có'}\033[0m")
     print("\033[1;32m==================================================\033[0m")
     print("\033[1;32m[1]\033[0m \033[1;37mStart\033[0m")
     print("\033[1;32m[2]\033[0m \033[1;37mSet up\033[0m")
@@ -741,7 +740,7 @@ if __name__ == "__main__":
             temp_path = "/sdcard/temp_autoexec.lua"
             with open(temp_path, "w", encoding="utf-8") as f:
                 f.write(script_data)
-            executor_names = ["Delta", "Codex", "Arceus", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
+            executor_names = ["Delta", "Codex", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
             target_dirs = set()
             for name in executor_names:
                 base_dir = f"/sdcard/{name}"
