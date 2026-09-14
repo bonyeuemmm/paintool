@@ -8,14 +8,17 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.3-Beta"
+VERSION = "v1.2.4-Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
+CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
 
 PACKAGE_PREFIX = "com.roblox"
 TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
 WEBHOOK_URL = ""
+DISCORD_UID = ""
+SEND_TEXT_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5oitBIvUXLeYB7phyO-dHkf7NTyuBsqBeQJq2emcyFYTk1ll0dl5-uqg-bhDiINmYV"
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 DISCORD_LINK = "https://discord.gg/z7RUNArBuJ"
@@ -27,6 +30,28 @@ stop_start = False
 START_UP_TIME = None
 
 ROBLOX_ERROR_CODES = ["277", "260", "279", "268", "267", "273", "278", "264", "261", "524"]
+
+def load_saved_config():
+    global WEBHOOK_URL, DISCORD_UID
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                WEBHOOK_URL = data.get("webhook_url", "")
+                DISCORD_UID = data.get("discord_uid", "")
+        except Exception:
+            pass
+
+def save_config_file():
+    try:
+        data = {
+            "webhook_url": WEBHOOK_URL,
+            "discord_uid": DISCORD_UID
+        }
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
 
 def clear_screen():
     os.system('stty sane 2>/dev/null')
@@ -191,6 +216,14 @@ def send_webhook(message, with_image=False):
             "footer": {"text": footer_text}
         }
 
+        payload_dict = {
+            "username": "PAIN TOOL REJOIN VIP",
+            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+            "embeds": [embed_obj]
+        }
+        if DISCORD_UID:
+            payload_dict["content"] = f"<@{DISCORD_UID}>"
+
         if with_image:
             is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
             if is_root:
@@ -200,11 +233,7 @@ def send_webhook(message, with_image=False):
 
             if os.path.exists(SCREENSHOT_PATH) and os.path.getsize(SCREENSHOT_PATH) > 0:
                 embed_obj["image"] = {"url": "attachment://screenshot.png"}
-                payload_json = json.dumps({
-                    "username": "PAIN TOOL REJOIN VIP",
-                    "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-                    "embeds": [embed_obj]
-                })
+                payload_json = json.dumps(payload_dict)
                 run_cmd([
                     "curl", "-s", "-X", "POST", WEBHOOK_URL,
                     "-F", f"payload_json={payload_json}",
@@ -216,11 +245,7 @@ def send_webhook(message, with_image=False):
                     run_cmd(["su", "-c", f"rm -f {SCREENSHOT_PATH}"])
                 return
 
-        payload_json = json.dumps({
-            "username": "PAIN TOOL REJOIN VIP",
-            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-            "embeds": [embed_obj]
-        })
+        payload_json = json.dumps(payload_dict)
         run_cmd([
             "curl", "-s", "-X", "POST", WEBHOOK_URL,
             "-H", "Content-Type: application/json",
@@ -229,12 +254,41 @@ def send_webhook(message, with_image=False):
     except Exception:
         pass
 
-def handle_send_text():
+def send_detailed_alert(message):
     if not WEBHOOK_URL:
-        print("\033[1;31m[-] Webhook chưa được cấu hình!\033[0m")
-        time.sleep(2)
         return
+    try:
+        now = datetime.now()
+        ping_str = f"<@{DISCORD_UID}>" if DISCORD_UID else ""
+        description_text = (
+            f"⚠️ **CẢNH BÁO CHI TIẾT HỆ THỐNG** ⚠️\n\n"
+            f"{message}\n\n"
+            f"🕐 **Thời gian:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+        )
+        embed_obj = {
+            "title": f"PAIN TOOL ALERT ({VERSION})",
+            "description": description_text,
+            "color": 16711680,
+            "footer": {"text": "MADE BY PAIN"}
+        }
+        payload_dict = {
+            "username": "PAIN TOOL REJOIN VIP",
+            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
+            "embeds": [embed_obj]
+        }
+        if ping_str:
+            payload_dict["content"] = ping_str
 
+        payload_json = json.dumps(payload_dict)
+        run_cmd([
+            "curl", "-s", "-X", "POST", WEBHOOK_URL,
+            "-H", "Content-Type: application/json",
+            "-d", payload_json
+        ], timeout=10)
+    except Exception:
+        pass
+
+def handle_send_text():
     while True:
         clear_screen()
         print("\033[1;32m=== SEND TEXT TO DISCORD ===\033[0m")
@@ -271,7 +325,7 @@ def handle_send_text():
         
         try:
             payload = json.dumps(embed_data)
-            run_cmd(["curl", "-s", "-X", "POST", WEBHOOK_URL, "-H", "Content-Type: application/json", "-d", payload])
+            run_cmd(["curl", "-s", "-X", "POST", SEND_TEXT_WEBHOOK, "-H", "Content-Type: application/json", "-d", payload])
             print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
         except Exception as e:
             print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
@@ -372,22 +426,44 @@ def start_tool():
     
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;32m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
-    print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
+    if len(packages) >= 4:
+        print(f"\033[1;33m[*] Số lượng tab >= 4, áp dụng mở nhóm 3 tab, cách nhau 15 giây.\033[0m")
+    else:
+        print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter để ngắt Start.\033[0m")
     print("--------------------------------------------------")
 
-    for idx, pkg in enumerate(packages):
-        print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
-        open_game_until_success(pkg)
-        last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-        if idx < len(packages) - 1:
-            print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
-            time.sleep(CLONE_LAUNCH_DELAY)
+    if len(packages) >= 4:
+        batch_size = 3
+        total_clones = len(packages)
+        for i in range(0, total_clones, batch_size):
+            if stop_start: break
+            batch = packages[i:i + batch_size]
+            for idx_b, pkg in enumerate(batch):
+                if stop_start: break
+                global_idx = i + idx_b + 1
+                print(f"\033[1;36m[*] Đang khởi chạy Tab [{global_idx}/{total_clones}]: {pkg}\033[0m")
+                open_game_until_success(pkg)
+                last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+            if i + batch_size < total_clones and not stop_start:
+                print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
+                time.sleep(15)
+    else:
+        for idx, pkg in enumerate(packages):
+            if stop_start: break
+            print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
+            open_game_until_success(pkg)
+            last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+            if idx < len(packages) - 1:
+                print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
+                time.sleep(CLONE_LAUNCH_DELAY)
 
-    send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
+    if not stop_start:
+        send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
 
     start_time = time.time()
     last_webhook_time = time.time()
+    last_cleanup_time = time.time()
     
     stop_start = False
     listener = threading.Thread(target=listen_for_stop, daemon=True)
@@ -399,6 +475,13 @@ def start_tool():
             elapsed_minutes = (current_time - start_time) / 60.0
             packages = get_all_packages()
 
+            if (current_time - last_cleanup_time) >= 600:
+                print("\033[1;32m[*] Tiến hành tự động dọn dẹp RAM và cache định kỳ...\033[0m")
+                for pkg in packages:
+                    run_cmd(["su", "-c", f"rm -rf /data/data/{pkg}/cache/*"])
+                run_cmd(["su", "-c", "sync && echo 3 > /proc/sys/vm/drop_caches"])
+                last_cleanup_time = time.time()
+
             if AUTO_REJOIN_MODE == 1:
                 for pkg in packages:
                     if stop_start: break
@@ -409,6 +492,7 @@ def start_tool():
 
                     if not is_running:
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Đang kích hoạt lại...\033[0m")
+                        send_detailed_alert(f"Tab {pkg} bị văng/đóng hoàn toàn! Tool đang tiến hành tự động mở lại.")
                         close_game(pkg)
                         time.sleep(2)
                         open_game_until_success(pkg)
@@ -421,6 +505,7 @@ def start_tool():
                         
                         if has_error:
                             print(f"\033[1;33m[-] Phát hiện {pkg} [{error_msg}]! Đang Rejoin...\033[0m")
+                            send_detailed_alert(f"Phát hiện lỗi trên {pkg}: [{error_msg}]. Tool đang thực hiện Rejoin.")
                             close_game(pkg)
                             time.sleep(3)
                             open_game_until_success(pkg)
@@ -435,11 +520,25 @@ def start_tool():
                         close_game(pkg)
                     time.sleep(3)
                     
-                    for idx, pkg in enumerate(packages):
-                        open_game_until_success(pkg)
-                        last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                        if idx < len(packages) - 1:
-                            time.sleep(CLONE_LAUNCH_DELAY)
+                    if len(packages) >= 4:
+                        batch_size = 3
+                        total_clones = len(packages)
+                        for i in range(0, total_clones, batch_size):
+                            if stop_start: break
+                            batch = packages[i:i + batch_size]
+                            for idx_b, pkg in enumerate(batch):
+                                if stop_start: break
+                                open_game_until_success(pkg)
+                                last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+                            if i + batch_size < total_clones and not stop_start:
+                                time.sleep(15)
+                    else:
+                        for idx, pkg in enumerate(packages):
+                            if stop_start: break
+                            open_game_until_success(pkg)
+                            last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+                            if idx < len(packages) - 1:
+                                time.sleep(CLONE_LAUNCH_DELAY)
                     start_time = time.time()
 
             if (time.time() - last_webhook_time) >= 300:
@@ -485,6 +584,7 @@ def show_banner():
     print(f"\033[1;32m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;32m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
     print(f"\033[1;32m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
+    print(f"\033[1;32m Discord UID     :\033[0m \033[1;37m{DISCORD_UID if DISCORD_UID else 'Chưa có'}\033[0m")
     print("\033[1;32m==================================================\033[0m")
     print("\033[1;32m[1]\033[0m \033[1;37mStart\033[0m")
     print("\033[1;32m[2]\033[0m \033[1;37mSet up\033[0m")
@@ -499,6 +599,7 @@ def show_banner():
     print("\033[1;32m==================================================\033[0m")
 
 if __name__ == "__main__":
+    load_saved_config()
     authenticate()
     while True:
         show_banner()
@@ -609,16 +710,28 @@ if __name__ == "__main__":
             new_webhook = input("Nhập URL Discord Webhook (Để trống để xóa Webhook): ").strip()
             WEBHOOK_URL = new_webhook
             if WEBHOOK_URL:
-                print("\033[1;32m[+] Đã cập nhật Webhook thành công!\033[0m")
+                while True:
+                    uid_input = input("Nhập Discord UID để nhận ping thông báo: ").strip()
+                    if uid_input:
+                        DISCORD_UID = uid_input
+                        break
+                    else:
+                        print("\033[1;31m[!] Bắt buộc phải nhập Discord UID để tiếp tục!\033[0m")
+                save_config_file()
+                print("\033[1;32m[+] Đã cập nhật Webhook và Discord UID thành công!\033[0m")
             else:
-                print("\033[1;33m[-] Đã xóa Webhook. Tool sẽ chạy không có thông báo.\033[0m")
+                DISCORD_UID = ""
+                save_config_file()
+                print("\033[1;33m[-] Đã xóa Webhook.\033[0m")
             time.sleep(2)
         elif choice == "6":
             clear_screen()
             packages = get_all_packages()
             for pkg in packages:
                 run_cmd(["su", "-c", f"rm -rf /data/data/{pkg}/cache/*"])
-            print("\033[1;32m[+] Hoàn tất dọn dẹp cache!\033[0m")
+                run_cmd(["su", "-c", f"pm clear {pkg}"])
+            run_cmd(["su", "-c", "sync && echo 3 > /proc/sys/vm/drop_caches"])
+            print("\033[1;32m[+] Hoàn tất dọn dẹp cache và RAM định kỳ!\033[0m")
             time.sleep(2)
         elif choice == "7":
             clear_screen()
@@ -649,16 +762,34 @@ if __name__ == "__main__":
             clear_screen()
             found_pkgs = get_all_packages()
             print(f"\033[1;32m[*] Đang mở hàng loạt tab...\033[0m")
-            for idx, pkg in enumerate(found_pkgs):
-                is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-                cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
-                if is_root:
-                    run_cmd(["su", "-c", cmd])
-                else:
-                    run_cmd(cmd.split())
-                print(f"\033[1;32m[+] Đã mở package: {pkg}\033[0m")
-                if idx < len(found_pkgs) - 1:
-                    time.sleep(CLONE_LAUNCH_DELAY)
+            if len(found_pkgs) >= 4:
+                batch_size = 3
+                total_clones = len(found_pkgs)
+                for i in range(0, total_clones, batch_size):
+                    batch = found_pkgs[i:i + batch_size]
+                    for idx_b, pkg in enumerate(batch):
+                        global_idx = i + idx_b + 1
+                        is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+                        cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+                        if is_root:
+                            run_cmd(["su", "-c", cmd])
+                        else:
+                            run_cmd(cmd.split())
+                        print(f"\033[1;32m[+] Đã mở package [{global_idx}/{total_clones}]: {pkg}\033[0m")
+                    if i + batch_size < total_clones:
+                        print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
+                        time.sleep(15)
+            else:
+                for idx, pkg in enumerate(found_pkgs):
+                    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+                    cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+                    if is_root:
+                        run_cmd(["su", "-c", cmd])
+                    else:
+                        run_cmd(cmd.split())
+                    print(f"\033[1;32m[+] Đã mở package: {pkg}\033[0m")
+                    if idx < len(found_pkgs) - 1:
+                        time.sleep(CLONE_LAUNCH_DELAY)
             print("\033[1;32m[+] Hoàn tất mở các tab clone!\033[0m")
             time.sleep(2)
         elif choice == "9":
