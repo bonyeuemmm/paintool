@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.6"
+VERSION = "v1.2.7"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -346,7 +346,13 @@ def open_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
 
     if TARGET_LINK:
-        deep_link = f"roblox://placeId={TARGET_LINK}" if TARGET_LINK.isdigit() else TARGET_LINK
+        if TARGET_LINK.startswith("http://") or TARGET_LINK.startswith("https://") or TARGET_LINK.startswith("roblox://"):
+            deep_link = TARGET_LINK
+        elif TARGET_LINK.isdigit():
+            deep_link = f"roblox://placeId={TARGET_LINK}"
+        else:
+            deep_link = TARGET_LINK
+            
         cmd = f"am start -a android.intent.action.VIEW -d '{deep_link}' {pkg}"
     else:
         cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
@@ -356,31 +362,27 @@ def open_game(pkg):
     else:
         run_cmd(cmd.split())
 
-def is_in_target_map(pkg):
-    """
-    Kiểm tra sự tồn tại của Tiến trình (PID) thay vì đọc Logcat.
-    Đảm bảo tính chính xác 100% trên Roblox thường cũng như Clone.
-    """
+def is_app_running(pkg):
+    """Kiểm tra ứng dụng có còn tiến trình trong hệ thống (Đa nhiệm) hay không"""
     pid = run_cmd(["pidof", pkg], timeout=3)
     if pid:
         return True
     ps_out = run_cmd(["ps", "-A"], timeout=3)
     return pkg in ps_out
 
+def is_app_in_foreground(pkg):
+    """Kiểm tra ứng dụng có đang hiển thị trực tiếp trên màn hình hay bị ẩn xuống background"""
+    dumpsys = run_cmd(["dumpsys", "window", "displays"], timeout=3)
+    if not dumpsys:
+        dumpsys = run_cmd(["dumpsys", "activity", "activities"], timeout=3)
+    return pkg in dumpsys and "mCurrentFocus" in dumpsys
+
 def open_game_until_success(pkg):
-    print(f"\033[1;33m[*] Đang mở game cho {pkg}...\033[0m")
+    print(f"\033[1;33m[*] Đang khởi chạy Game + Load Map chọn ở Mục 2 cho {pkg}...\033[0m")
     open_game(pkg)
     
-    # Cho game khoảng nghỉ 30s để load ổn định giao diện
-    print(f"\033[1;33m[*] Chờ 30 giây để Roblox tải xong tài nguyên...\033[0m")
-    if wait_with_stop_check(30):
-        return
-
-    if is_in_target_map(pkg):
-        print(f"\033[1;32m[+] Game {pkg} đã được khởi chạy ổn định!\033[0m")
-    else:
-        print(f"\033[1;31m[-] Khởi chạy thất bại! Thử mở lại {pkg}...\033[0m")
-        open_game(pkg)
+    print(f"\033[1;33m[*] Chờ 15 giây để Roblox kết nối Server...\033[0m")
+    wait_with_stop_check(15)
 
 def close_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
@@ -509,35 +511,42 @@ def start_tool():
                 for pkg in packages:
                     if stop_start: break
                     
-                    is_running = is_in_target_map(pkg)
+                    has_process = is_app_running(pkg)
+                    is_foreground = is_app_in_foreground(pkg)
 
-                    if not is_running:
-                        print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Chờ 5s trước khi Rejoin (Gõ 0 để hủy)...\033[0m")
+                    # Trường hợp 1: Đã ĐÓNG ĐA NHIỆM hoàn toàn (mất PID) -> Vào lại NGAY LẬP TỨC
+                    if not has_process:
+                        print(f"\033[1;31m[-] Phát hiện {pkg} đã bị đóng Đa nhiệm! Tiến hành mở lại & Load Map ngay lập tức...\033[0m")
+                        send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm hoàn toàn! Tool đang mở lại ngay lập tức.")
+                        open_game_until_success(pkg)
+                        last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+                        continue
+
+                    # Trường hợp 2: Còn Đa nhiệm nhưng bị THOÁT RA MÀN HÌNH CHÍNH (Background) -> Chờ đúng 5 giây rồi vào lại
+                    if not is_foreground:
+                        print(f"\033[1;33m[-] {pkg} đang ở màn hình chính (vẫn còn Đa nhiệm). Chờ 5 giây trước khi mở lại Map...\033[0m")
                         if wait_with_stop_check(5): break
                         
-                        send_detailed_alert(f"Tab {pkg} bị văng/đóng hoàn toàn! Tool đang tiến hành tự động mở lại.")
+                        # Kiểm tra lại xem sau 5 giây người dùng có quay lại game không
+                        if not is_app_in_foreground(pkg):
+                            print(f"\033[1;32m[+] Đã đủ 5s! Tự động bật lại game & Load Map Mục 2 cho {pkg}...\033[0m")
+                            open_game_until_success(pkg)
+                            last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+                            continue
+
+                    # Trường hợp 3: Đang trong Game -> Bắt các mã lỗi Disconnect/Kick
+                    since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
+                    has_error, error_msg = check_package_error_since(pkg, since_time)
+                    
+                    if has_error:
+                        print(f"\033[1;31m[-] Phát hiện {pkg} bị lỗi [{error_msg}]! Thực hiện Rejoin sau 3s...\033[0m")
+                        if wait_with_stop_check(3): break
+                        
+                        send_detailed_alert(f"Lỗi trên {pkg}: [{error_msg}]. Đang thực hiện Rejoin Map.")
                         close_game(pkg)
                         time.sleep(1)
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                        print(f"\033[1;32m[+] Đã mở lại {pkg}. Chờ 15s để ổn định...\033[0m")
-                        if wait_with_stop_check(15): break
-                    else:
-                        since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
-                        has_error, error_msg = check_package_error_since(pkg, since_time)
-                        
-                        if has_error:
-                            reason_str = error_msg
-                            print(f"\033[1;33m[-] Phát hiện {pkg} [{reason_str}]! Chờ 5s trước khi Rejoin (Gõ 0 để hủy)...\033[0m")
-                            if wait_with_stop_check(5): break
-                            
-                            send_detailed_alert(f"Phát hiện lỗi trên {pkg}: [{reason_str}]. Tool đang thực hiện Rejoin.")
-                            close_game(pkg)
-                            time.sleep(2)
-                            open_game_until_success(pkg)
-                            last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                            print(f"\033[1;32m[+] Đã Rejoin {pkg}. Chờ 15s để ổn định...\033[0m")
-                            if wait_with_stop_check(15): break
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
@@ -572,7 +581,7 @@ def start_tool():
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = time.time()
 
-            if wait_with_stop_check(3): break
+            if wait_with_stop_check(2): break
 
         if stop_start:
             print("\n\033[1;31m[!] Đã dừng Start. Quay lại menu...\033[0m")
