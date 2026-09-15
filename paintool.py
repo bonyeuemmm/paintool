@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.5"
+VERSION = "v1.2.6"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -357,49 +357,30 @@ def open_game(pkg):
         run_cmd(cmd.split())
 
 def is_in_target_map(pkg):
-    if not TARGET_LINK or not TARGET_LINK.isdigit():
+    """
+    Kiểm tra sự tồn tại của Tiến trình (PID) thay vì đọc Logcat.
+    Đảm bảo tính chính xác 100% trên Roblox thường cũng như Clone.
+    """
+    pid = run_cmd(["pidof", pkg], timeout=3)
+    if pid:
         return True
-    
-    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    
-    if is_root:
-        log_output = run_cmd(["su", "-c", "logcat -d -t 100"], timeout=3)
-    else:
-        log_output = run_cmd(["logcat", "-d", "-t", "100"], timeout=3)
-        
-    if not log_output:
-        return False
-        
-    for line in log_output.splitlines():
-        line_lower = line.lower()
-        if pkg in line_lower or "roblox" in line_lower:
-            if f"placeid={TARGET_LINK}" in line_lower or f"placeid:{TARGET_LINK}" in line_lower or f"place {TARGET_LINK}" in line_lower:
-                return True
-    return False
+    ps_out = run_cmd(["ps", "-A"], timeout=3)
+    return pkg in ps_out
 
 def open_game_until_success(pkg):
     print(f"\033[1;33m[*] Đang mở game cho {pkg}...\033[0m")
     open_game(pkg)
     
-    print(f"\033[1;33m[*] Đang chờ 10 giây để game khởi chạy...\033[0m")
-    if wait_with_stop_check(10):
+    # Cho game khoảng nghỉ 30s để load ổn định giao diện
+    print(f"\033[1;33m[*] Chờ 30 giây để Roblox tải xong tài nguyên...\033[0m")
+    if wait_with_stop_check(30):
         return
 
-    while not stop_start:
-        pid = run_cmd(["pidof", pkg], timeout=3)
-        ps_out = run_cmd(["ps", "-A"], timeout=3)
-        is_running = bool(pid) or (pkg in ps_out)
-        
-        if not is_running:
-            open_game(pkg)
-        
-        if is_running and is_in_target_map(pkg):
-            print(f"\033[1;32m[+] Vào map thành công cho {pkg}!\033[0m")
-            break
-            
-        print(f"\033[1;36m[*] Đang quét trạng thái map {pkg}... (Thử lại sau 5s)\033[0m")
-        if wait_with_stop_check(5):
-            break
+    if is_in_target_map(pkg):
+        print(f"\033[1;32m[+] Game {pkg} đã được khởi chạy ổn định!\033[0m")
+    else:
+        print(f"\033[1;31m[-] Khởi chạy thất bại! Thử mở lại {pkg}...\033[0m")
+        open_game(pkg)
 
 def close_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
@@ -528,9 +509,7 @@ def start_tool():
                 for pkg in packages:
                     if stop_start: break
                     
-                    pid = run_cmd(["pidof", pkg], timeout=3)
-                    ps_out = run_cmd(["ps", "-A"], timeout=5)
-                    is_running = bool(pid) or (pkg in ps_out)
+                    is_running = is_in_target_map(pkg)
 
                     if not is_running:
                         print(f"\033[1;31m[-] Tab {pkg} bị văng/đóng! Chờ 5s trước khi Rejoin (Gõ 0 để hủy)...\033[0m")
@@ -546,10 +525,9 @@ def start_tool():
                     else:
                         since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                         has_error, error_msg = check_package_error_since(pkg, since_time)
-                        in_map = is_in_target_map(pkg)
                         
-                        if has_error or not in_map:
-                            reason_str = error_msg if has_error else "Không ở trong Map Game đã chọn"
+                        if has_error:
+                            reason_str = error_msg
                             print(f"\033[1;33m[-] Phát hiện {pkg} [{reason_str}]! Chờ 5s trước khi Rejoin (Gõ 0 để hủy)...\033[0m")
                             if wait_with_stop_check(5): break
                             
