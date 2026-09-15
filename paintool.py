@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.7"
+VERSION = "v1.2.8"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -345,7 +345,16 @@ def get_all_packages():
 def open_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
 
+    # BƯỚC 1: Bật ứng dụng lên màn hình chính trước
+    cmd_launch = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+    if is_root:
+        run_cmd(["su", "-c", cmd_launch])
+    else:
+        run_cmd(cmd_launch.split())
+
+    # BƯỚC 2: Truyền Deep Link chứa ID / Server Game đã chọn ở mục 2
     if TARGET_LINK:
+        time.sleep(1) # Chờ 1 giây để app chuyển vùng hẳn về foreground
         if TARGET_LINK.startswith("http://") or TARGET_LINK.startswith("https://") or TARGET_LINK.startswith("roblox://"):
             deep_link = TARGET_LINK
         elif TARGET_LINK.isdigit():
@@ -353,14 +362,11 @@ def open_game(pkg):
         else:
             deep_link = TARGET_LINK
             
-        cmd = f"am start -a android.intent.action.VIEW -d '{deep_link}' {pkg}"
-    else:
-        cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
-
-    if is_root:
-        run_cmd(["su", "-c", cmd])
-    else:
-        run_cmd(cmd.split())
+        cmd_link = f"am start -a android.intent.action.VIEW -d '{deep_link}' {pkg}"
+        if is_root:
+            run_cmd(["su", "-c", cmd_link])
+        else:
+            run_cmd(cmd_link.split())
 
 def is_app_running(pkg):
     """Kiểm tra ứng dụng có còn tiến trình trong hệ thống (Đa nhiệm) hay không"""
@@ -378,10 +384,9 @@ def is_app_in_foreground(pkg):
     return pkg in dumpsys and "mCurrentFocus" in dumpsys
 
 def open_game_until_success(pkg):
-    print(f"\033[1;33m[*] Đang khởi chạy Game + Load Map chọn ở Mục 2 cho {pkg}...\033[0m")
+    print(f"\033[1;33m[*] Mở lại {pkg} và kích hoạt trực tiếp Map Game Mục 2...\033[0m")
     open_game(pkg)
-    
-    print(f"\033[1;33m[*] Chờ 15 giây để Roblox kết nối Server...\033[0m")
+    print(f"\033[1;33m[*] Đã kích hoạt lệnh load Map. Chờ 15s để ổn định...\033[0m")
     wait_with_stop_check(15)
 
 def close_game(pkg):
@@ -514,35 +519,35 @@ def start_tool():
                     has_process = is_app_running(pkg)
                     is_foreground = is_app_in_foreground(pkg)
 
-                    # Trường hợp 1: Đã ĐÓNG ĐA NHIỆM hoàn toàn (mất PID) -> Vào lại NGAY LẬP TỨC
+                    # TRƯỜNG HỢP 1: ĐÓNG ĐA NHIỆM -> MỞ LẠI VÀ CHUYỂN NGAY VÀO MAP MỤC 2
                     if not has_process:
-                        print(f"\033[1;31m[-] Phát hiện {pkg} đã bị đóng Đa nhiệm! Tiến hành mở lại & Load Map ngay lập tức...\033[0m")
-                        send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm hoàn toàn! Tool đang mở lại ngay lập tức.")
+                        print(f"\033[1;31m[-] Tab {pkg} vừa bị đóng Đa nhiệm! Mở lại và chuyển ngay vào Map Mục 2...\033[0m")
+                        send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm! Mở lại và load Map ngay lập tức.")
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         continue
 
-                    # Trường hợp 2: Còn Đa nhiệm nhưng bị THOÁT RA MÀN HÌNH CHÍNH (Background) -> Chờ đúng 5 giây rồi vào lại
+                    # TRƯỜNG HỢP 2: CÒN ĐA NHIỆM NHƯNG VĂNG RA MÀN HÌNH CHÍNH -> ĐẾM ĐỦ 5S RỒI ÉP VÀO LẠI MAP MỤC 2
                     if not is_foreground:
-                        print(f"\033[1;33m[-] {pkg} đang ở màn hình chính (vẫn còn Đa nhiệm). Chờ 5 giây trước khi mở lại Map...\033[0m")
+                        print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính. Đang đếm ngược 5s để quay lại Map Mục 2...\033[0m")
                         if wait_with_stop_check(5): break
                         
-                        # Kiểm tra lại xem sau 5 giây người dùng có quay lại game không
+                        # Đủ 5s mà app vẫn ở màn hình chính -> Phát lệnh kéo về Foreground + Load Link Map Mục 2
                         if not is_app_in_foreground(pkg):
-                            print(f"\033[1;32m[+] Đã đủ 5s! Tự động bật lại game & Load Map Mục 2 cho {pkg}...\033[0m")
+                            print(f"\033[1;32m[+] Đã đủ 5s! Gọi lại {pkg} và kích hoạt Load Map Mục 2...\033[0m")
                             open_game_until_success(pkg)
                             last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                             continue
 
-                    # Trường hợp 3: Đang trong Game -> Bắt các mã lỗi Disconnect/Kick
+                    # TRƯỜNG HỢP 3: BỊ KICK HOẶC MẤT KẾT NỐI
                     since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                     has_error, error_msg = check_package_error_since(pkg, since_time)
                     
                     if has_error:
-                        print(f"\033[1;31m[-] Phát hiện {pkg} bị lỗi [{error_msg}]! Thực hiện Rejoin sau 3s...\033[0m")
+                        print(f"\033[1;31m[-] Phát hiện {pkg} lỗi [{error_msg}]! Tiến hành Rejoin lại Map Mục 2...\033[0m")
                         if wait_with_stop_check(3): break
                         
-                        send_detailed_alert(f"Lỗi trên {pkg}: [{error_msg}]. Đang thực hiện Rejoin Map.")
+                        send_detailed_alert(f"Báo lỗi trên {pkg}: [{error_msg}]. Đang thực hiện Rejoin Map Mục 2.")
                         close_game(pkg)
                         time.sleep(1)
                         open_game_until_success(pkg)
