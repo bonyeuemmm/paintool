@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.2.8"
+VERSION = "v1.2.9"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -189,6 +189,7 @@ def authenticate():
             time.sleep(2)
 
 def send_webhook(message, with_image=False):
+    """Gửi báo cáo định kỳ 5 phút đính kèm ảnh chụp màn hình (KHÔNG PING DISCORD)"""
     if not WEBHOOK_URL:
         return
     try:
@@ -216,13 +217,12 @@ def send_webhook(message, with_image=False):
             "footer": {"text": footer_text}
         }
 
+        # ĐÃ BỎ CONTENT PING TRONG BÁO CÁO 5 PHÚT
         payload_dict = {
             "username": "PAIN TOOL REJOIN VIP",
             "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
             "embeds": [embed_obj]
         }
-        if DISCORD_UID:
-            payload_dict["content"] = f"<@{DISCORD_UID}>"
 
         if with_image:
             is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
@@ -255,6 +255,7 @@ def send_webhook(message, with_image=False):
         pass
 
 def send_detailed_alert(message):
+    """Gửi thông báo cảnh báo sự cố chi tiết (CÓ PING DISCORD)"""
     if not WEBHOOK_URL:
         return
     try:
@@ -343,18 +344,11 @@ def get_all_packages():
     return packages if packages else [PACKAGE_PREFIX]
 
 def open_game(pkg):
+    """Mở game và ép load thẳng vào Map đã chọn ở Mục 2 bằng Intent Deep Link chuẩn"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
 
-    # BƯỚC 1: Bật ứng dụng lên màn hình chính trước
-    cmd_launch = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
-    if is_root:
-        run_cmd(["su", "-c", cmd_launch])
-    else:
-        run_cmd(cmd_launch.split())
-
-    # BƯỚC 2: Truyền Deep Link chứa ID / Server Game đã chọn ở mục 2
     if TARGET_LINK:
-        time.sleep(1) # Chờ 1 giây để app chuyển vùng hẳn về foreground
+        # Xử lý định dạng Deep Link
         if TARGET_LINK.startswith("http://") or TARGET_LINK.startswith("https://") or TARGET_LINK.startswith("roblox://"):
             deep_link = TARGET_LINK
         elif TARGET_LINK.isdigit():
@@ -362,11 +356,19 @@ def open_game(pkg):
         else:
             deep_link = TARGET_LINK
             
-        cmd_link = f"am start -a android.intent.action.VIEW -d '{deep_link}' {pkg}"
+        # Ép Android gọi Deep Link kết hợp chỉ định Package Name chính xác
+        cmd_launch_link = f"am start -a android.intent.action.VIEW -d \"{deep_link}\" -p {pkg}"
         if is_root:
-            run_cmd(["su", "-c", cmd_link])
+            run_cmd(["su", "-c", cmd_launch_link])
         else:
-            run_cmd(cmd_link.split())
+            run_cmd(cmd_launch_link.split())
+    else:
+        # Nếu chưa chọn Game ở Mục 2 -> Khởi chạy launcher bình thường
+        cmd_launch = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
+        if is_root:
+            run_cmd(["su", "-c", cmd_launch])
+        else:
+            run_cmd(cmd_launch.split())
 
 def is_app_running(pkg):
     """Kiểm tra ứng dụng có còn tiến trình trong hệ thống (Đa nhiệm) hay không"""
@@ -384,9 +386,9 @@ def is_app_in_foreground(pkg):
     return pkg in dumpsys and "mCurrentFocus" in dumpsys
 
 def open_game_until_success(pkg):
-    print(f"\033[1;33m[*] Mở lại {pkg} và kích hoạt trực tiếp Map Game Mục 2...\033[0m")
+    print(f"\033[1;33m[*] Kích hoạt lại {pkg} và tải trực tiếp Map Mục 2...\033[0m")
     open_game(pkg)
-    print(f"\033[1;33m[*] Đã kích hoạt lệnh load Map. Chờ 15s để ổn định...\033[0m")
+    print(f"\033[1;33m[*] Đã gửi lệnh load Map. Chờ 15s để ổn định...\033[0m")
     wait_with_stop_check(15)
 
 def close_game(pkg):
@@ -527,19 +529,19 @@ def start_tool():
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         continue
 
-                    # TRƯỜNG HỢP 2: CÒN ĐA NHIỆM NHƯNG VĂNG RA MÀN HÌNH CHÍNH -> ĐẾM ĐỦ 5S RỒI ÉP VÀO LẠI MAP MỤC 2
+                    # TRƯỜNG HỢP 2: ĐANG Ở MÀN HÌNH CHÍNH (XUẤT HIỆN KHI VĂNG HOẶC BACKGROUND) -> ÉP VÀO LẠI MAP MỤC 2
                     if not is_foreground:
                         print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính. Đang đếm ngược 5s để quay lại Map Mục 2...\033[0m")
                         if wait_with_stop_check(5): break
                         
-                        # Đủ 5s mà app vẫn ở màn hình chính -> Phát lệnh kéo về Foreground + Load Link Map Mục 2
+                        # Sau 5s vẫn chưa vào lại màn hình chính -> Ép gọi Deep Link Map trực tiếp
                         if not is_app_in_foreground(pkg):
                             print(f"\033[1;32m[+] Đã đủ 5s! Gọi lại {pkg} và kích hoạt Load Map Mục 2...\033[0m")
                             open_game_until_success(pkg)
                             last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                             continue
 
-                    # TRƯỜNG HỢP 3: BỊ KICK HOẶC MẤT KẾT NỐI
+                    # TRƯỜNG HỢP 3: BỊ KICK HOẶC MẤT KẾT NỐI (LOẠI BỎ THỜI GIAN TRƯỚC KHI MỞ)
                     since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                     has_error, error_msg = check_package_error_since(pkg, since_time)
                     
@@ -582,7 +584,7 @@ def start_tool():
                     start_time = time.time()
 
             if (time.time() - last_webhook_time) >= 300:
-                print("\033[1;32m[*] Đã đủ 5 phút, đang gửi báo cáo định kỳ...\033[0m")
+                print("\033[1;32m[*] Đã đủ 5 phút, đang gửi báo cáo ảnh chụp màn hình định kỳ (Im lặng, không ping)...\033[0m")
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = time.time()
 
@@ -806,24 +808,14 @@ if __name__ == "__main__":
                     batch = found_pkgs[i:i + batch_size]
                     for idx_b, pkg in enumerate(batch):
                         global_idx = i + idx_b + 1
-                        is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-                        cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
-                        if is_root:
-                            run_cmd(["su", "-c", cmd])
-                        else:
-                            run_cmd(cmd.split())
+                        open_game(pkg)
                         print(f"\033[1;32m[+] Đã mở package [{global_idx}/{total_clones}]: {pkg}\033[0m")
                     if i + batch_size < total_clones:
                         print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
                         time.sleep(15)
             else:
                 for idx, pkg in enumerate(found_pkgs):
-                    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-                    cmd = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
-                    if is_root:
-                        run_cmd(["su", "-c", cmd])
-                    else:
-                        run_cmd(cmd.split())
+                    open_game(pkg)
                     print(f"\033[1;32m[+] Đã mở package: {pkg}\033[0m")
                     if idx < len(found_pkgs) - 1:
                         time.sleep(CLONE_LAUNCH_DELAY)
