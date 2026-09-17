@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.3.0 Beta"
+VERSION = "v1.3.1 Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -342,19 +342,35 @@ def get_all_packages():
     packages.sort()
     return packages if packages else [PACKAGE_PREFIX]
 
+def close_game(pkg):
+    """Buộc dừng ứng dụng và dọn dẹp tiến trình khỏi đa nhiệm hoàn toàn"""
+    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+    cmd_kill = f"am kill {pkg}"
+    cmd_force = f"am force-stop {pkg}"
+    
+    if is_root:
+        run_cmd(["su", "-c", cmd_kill])
+        run_cmd(["su", "-c", cmd_force])
+    else:
+        run_cmd(cmd_kill.split())
+        run_cmd(cmd_force.split())
+
 def open_game(pkg):
-    """Mở game và ép load thẳng vào Map đã chọn ở Mục 2 bằng Intent Deep Link chuẩn"""
+    """Tắt hoàn toàn app cũ rồi mới gửi Deep Link để bắt buộc load lại Map/VIP"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
 
+    close_game(pkg)
+    time.sleep(1)
+
     if TARGET_LINK:
-        if TARGET_LINK.startswith("http://") or TARGET_LINK.startswith("https://") or TARGET_LINK.startswith("roblox://"):
-            deep_link = TARGET_LINK
-        elif TARGET_LINK.isdigit():
+        if TARGET_LINK.isdigit():
+            deep_link = f"roblox://placeId={TARGET_LINK}"
+        elif not TARGET_LINK.startswith("roblox://") and not TARGET_LINK.startswith("http"):
             deep_link = f"roblox://placeId={TARGET_LINK}"
         else:
             deep_link = TARGET_LINK
             
-        cmd_launch_link = f"am start -a android.intent.action.VIEW -d \"{deep_link}\" -p {pkg}"
+        cmd_launch_link = f"am start -a android.intent.action.VIEW -d \"{deep_link}\" {pkg}"
         if is_root:
             run_cmd(["su", "-c", cmd_launch_link])
         else:
@@ -387,40 +403,38 @@ def open_game_until_success(pkg):
     print(f"\033[1;33m[*] Đã gửi lệnh load Map. Chờ 15s để ổn định...\033[0m")
     wait_with_stop_check(15)
 
-def close_game(pkg):
-    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    cmd_kill = f"am kill {pkg}"
-    cmd_force = f"am force-stop {pkg}"
-    
-    if is_root:
-        run_cmd(["su", "-c", cmd_kill])
-        run_cmd(["su", "-c", cmd_force])
-    else:
-        run_cmd(cmd_kill.split())
-        run_cmd(cmd_force.split())
-
 def check_package_error_since(pkg, since_time_str):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
     
-    cmd = ["logcat", "-d", "-t", since_time_str]
+    if is_root:
+        log_dir = f"/data/data/{pkg}/files/logs"
+        latest_log = run_cmd(["su", "-c", f"ls -t {log_dir}/*.log 2>/dev/null | head -n 1"])
+        if latest_log and "No such file" not in latest_log:
+            log_content = run_cmd(["su", "-c", f"tail -n 60 {latest_log}"])
+            if log_content:
+                log_lower = log_content.lower()
+                for code in ROBLOX_ERROR_CODES:
+                    if f"error code: {code}" in log_lower or f"disconnection notification: {code}" in log_lower or f"code: {code}" in log_lower:
+                        return True, f"Mã Lỗi {code}"
+                if "disconnected" in log_lower or "kicked" in log_lower:
+                    return True, "Bị Kick / Mất kết nối (Log File)"
+
     if is_root:
         log_output = run_cmd(["su", "-c", f"logcat -d -t '{since_time_str}'"], timeout=4)
     else:
-        log_output = run_cmd(cmd, timeout=4)
+        log_output = run_cmd(["logcat", "-d", "-t", since_time_str], timeout=4)
 
-    if not log_output:
-        return False, None
+    if log_output:
+        kick_keywords = ['you have been kicked', 'disconnected from game', 'unexpected disconnection', 'same account launched', 'error code']
+        for line in log_output.splitlines():
+            line_lower = line.lower()
+            if pkg in line_lower or "roblox" in line_lower:
+                for code in ROBLOX_ERROR_CODES:
+                    if code in line_lower and ("error" in line_lower or "code" in line_lower or "disconnect" in line_lower):
+                        return True, f"Mã Lỗi {code}"
+                if any(k in line_lower for k in kick_keywords):
+                    return True, "Bị Kick / Mất kết nối (Logcat)"
 
-    kick_keywords = ['you have been kicked', 'disconnected from game', 'unexpected disconnection', 'same account launched']
-    
-    for line in log_output.splitlines():
-        line_lower = line.lower()
-        if pkg in line_lower or "roblox" in line_lower:
-            for code in ROBLOX_ERROR_CODES:
-                if f"error code: {code}" in line_lower or f"error {code}" in line_lower or f"code: {code}" in line_lower:
-                    return True, f"Mã Lỗi {code}"
-            if any(k in line_lower for k in kick_keywords):
-                return True, "Bị Kick / Mất kết nối"
     return False, None
 
 def listen_for_stop():
@@ -517,7 +531,6 @@ def start_tool():
                     has_process = is_app_running(pkg)
                     is_foreground = is_app_in_foreground(pkg)
 
-                    # TRƯỜNG HỢP 1: ĐÓNG ĐA NHIỆM -> MỞ LẠI VÀ CHUYỂN NGAY VÀO MAP MỤC 2
                     if not has_process:
                         print(f"\033[1;31m[-] Tab {pkg} vừa bị đóng Đa nhiệm! Mở lại và chuyển ngay vào Map Mục 2...\033[0m")
                         send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm! Mở lại và load Map ngay lập tức.")
@@ -525,29 +538,28 @@ def start_tool():
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         continue
 
-                    # TRƯỜNG HỢP 2: ĐANG Ở MÀN HÌNH CHÍNH (XUẤT HIỆN KHI VĂNG HOẶC BACKGROUND) -> ÉP VÀO LẠI MAP MỤC 2
                     if not is_foreground:
                         print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính/Lobby. Đang đếm ngược 5s...\033[0m")
                         if wait_with_stop_check(5): break
                         
-                        # Sau 5s chờ trong lobby/màn hình chính -> Tự động kích hoạt ép vào lại Map/Link VIP
-                        print(f"\033[1;32m[+] Đã chờ đủ 5s! Tự động quét và kích hoạt Load lại Map/Server VIP đã chọn...\033[0m")
-                        send_detailed_alert(f"Tab {pkg} ở Màn hình chính/Lobby. Đã tự động kích hoạt Rejoin lại Map Mục 2.")
+                        print(f"\033[1;32m[+] Đã chờ đủ 5s! Tự động đóng hẳn app và Load lại Map/Server VIP đã chọn...\033[0m")
+                        send_detailed_alert(f"Tab {pkg} ở Màn hình chính/Lobby. Đang buộc dừng ứng dụng và Rejoin Map Mục 2.")
+                        close_game(pkg)
+                        time.sleep(1)
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         continue
 
-                    # TRƯỜNG HỢP 3: BỊ KICK HOẶC MẤT KẾT NỐI (LOẠI BỎ THỜI GIAN TRƯỚC KHI MỞ)
                     since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                     has_error, error_msg = check_package_error_since(pkg, since_time)
                     
                     if has_error:
-                        print(f"\033[1;31m[-] Phát hiện {pkg} lỗi [{error_msg}]! Tiến hành Rejoin lại Map Mục 2...\033[0m")
-                        if wait_with_stop_check(3): break
+                        print(f"\033[1;31m[-] Phát hiện {pkg} bị lỗi [{error_msg}]! Tiến hành đóng ứng dụng, xóa đa nhiệm và Rejoin...\033[0m")
+                        send_detailed_alert(f"Phát hiện lỗi trên {pkg}: [{error_msg}]. Đã đóng app, xóa đa nhiệm và Rejoin lại Map Mục 2.")
                         
-                        send_detailed_alert(f"Báo lỗi trên {pkg}: [{error_msg}]. Đang thực hiện Rejoin Map Mục 2.")
                         close_game(pkg)
-                        time.sleep(1)
+                        time.sleep(2)
+                        
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
 
