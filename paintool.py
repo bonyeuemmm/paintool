@@ -8,7 +8,7 @@ import string
 import threading
 from datetime import datetime
 
-VERSION = "v1.3.0"
+VERSION = "v1.3.0 Beta"
 API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -189,6 +189,7 @@ def authenticate():
             time.sleep(2)
 
 def send_webhook(message, with_image=False):
+    """Gửi báo cáo định kỳ 5 phút đính kèm ảnh chụp màn hình (KHÔNG PING DISCORD)"""
     if not WEBHOOK_URL:
         return
     try:
@@ -253,6 +254,7 @@ def send_webhook(message, with_image=False):
         pass
 
 def send_detailed_alert(message):
+    """Gửi thông báo cảnh báo sự cố chi tiết (CÓ PING DISCORD)"""
     if not WEBHOOK_URL:
         return
     try:
@@ -340,9 +342,10 @@ def get_all_packages():
     packages.sort()
     return packages if packages else [PACKAGE_PREFIX]
 
-def send_deep_link_once(pkg):
-    """Gửi 1 lệnh kích hoạt Map/Link Server VIP trực tiếp tới Package"""
+def open_game(pkg):
+    """Mở game và ép load thẳng vào Map đã chọn ở Mục 2 bằng Intent Deep Link chuẩn"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
+
     if TARGET_LINK:
         if TARGET_LINK.startswith("http://") or TARGET_LINK.startswith("https://") or TARGET_LINK.startswith("roblox://"):
             deep_link = TARGET_LINK
@@ -363,51 +366,8 @@ def send_deep_link_once(pkg):
         else:
             run_cmd(cmd_launch.split())
 
-def is_in_game_world(pkg):
-    """Kiểm tra xem game đã vượt qua Màn hình chính / Lobby và đã tải thực sự vào Game Map hay chưa"""
-    dumpsys = run_cmd(["dumpsys", "window", "displays"], timeout=3)
-    if not dumpsys:
-        dumpsys = run_cmd(["dumpsys", "activity", "activities"], timeout=3)
-    
-    # Ứng dụng phải ở foreground
-    if pkg not in dumpsys or "mCurrentFocus" not in dumpsys:
-        return False
-        
-    # Kiểm tra Logcat ngắn để tìm tín hiệu Game place đã kết nối thành công
-    log_check = run_cmd(["logcat", "-d", "-t", "50"], timeout=2).lower()
-    if "placeid" in log_check or "game joined" in log_check or "loading screen hidden" in log_check or "teleport" in log_check:
-        return True
-
-    return True
-
-def open_game_until_success(pkg):
-    """Spam lệnh Intent load Map VIP liên tục mỗi 0.5 giây cho đến khi ứng dụng vào Map thành công"""
-    print(f"\033[1;33m[*] Bắt đầu spam Intent vào Map/Server VIP cho {pkg} (Mỗi 0.5s/lần)... \033[0m")
-    
-    max_spam_seconds = 30
-    start_spam_time = time.time()
-    spam_count = 0
-
-    while True:
-        if stop_start:
-            break
-            
-        send_deep_link_once(pkg)
-        spam_count += 1
-        
-        # Bắt đầu kiểm tra xem đã vào được game world chưa sau khi spam ít nhất 3 lần
-        if spam_count >= 3 and is_app_in_foreground(pkg):
-            if is_in_game_world(pkg):
-                print(f"\033[1;32m[+] Đã load thành công vào Map cho {pkg}! (Đã spam {spam_count} lần)\033[0m")
-                break
-
-        if (time.time() - start_spam_time) > max_spam_seconds:
-            print(f"\033[1;31m[!] Đã spam quá 30 giây cho {pkg}. Tạm dừng spam để theo dõi...\033[0m")
-            break
-
-        time.sleep(0.5)
-
 def is_app_running(pkg):
+    """Kiểm tra ứng dụng có còn tiến trình trong hệ thống (Đa nhiệm) hay không"""
     pid = run_cmd(["pidof", pkg], timeout=3)
     if pid:
         return True
@@ -415,10 +375,17 @@ def is_app_running(pkg):
     return pkg in ps_out
 
 def is_app_in_foreground(pkg):
+    """Kiểm tra ứng dụng có đang hiển thị trực tiếp trên màn hình hay bị ẩn xuống background"""
     dumpsys = run_cmd(["dumpsys", "window", "displays"], timeout=3)
     if not dumpsys:
         dumpsys = run_cmd(["dumpsys", "activity", "activities"], timeout=3)
     return pkg in dumpsys and "mCurrentFocus" in dumpsys
+
+def open_game_until_success(pkg):
+    print(f"\033[1;33m[*] Kích hoạt lại {pkg} và tải trực tiếp Map Mục 2...\033[0m")
+    open_game(pkg)
+    print(f"\033[1;33m[*] Đã gửi lệnh load Map. Chờ 15s để ổn định...\033[0m")
+    wait_with_stop_check(15)
 
 def close_game(pkg):
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
@@ -470,10 +437,10 @@ def listen_for_stop():
 def wait_with_stop_check(seconds, message=""):
     if message:
         print(message)
-    for _ in range(int(seconds * 2)):
+    for _ in range(seconds):
         if stop_start:
             return True
-        time.sleep(0.5)
+        time.sleep(1)
     return False
 
 def start_tool():
@@ -550,28 +517,35 @@ def start_tool():
                     has_process = is_app_running(pkg)
                     is_foreground = is_app_in_foreground(pkg)
 
-                    # 1. BỊ ĐÓNG ĐA NHIỆM -> SPAM VÀO LẠI MAP
+                    # TRƯỜNG HỢP 1: ĐÓNG ĐA NHIỆM -> MỞ LẠI VÀ CHUYỂN NGAY VÀO MAP MỤC 2
                     if not has_process:
-                        print(f"\033[1;31m[-] Tab {pkg} bị đóng! Tiến hành Spam 0.5s để kích hoạt lại Map Mục 2...\033[0m")
-                        send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm! Bắt đầu spam kích hoạt Map.")
+                        print(f"\033[1;31m[-] Tab {pkg} vừa bị đóng Đa nhiệm! Mở lại và chuyển ngay vào Map Mục 2...\033[0m")
+                        send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm! Mở lại và load Map ngay lập tức.")
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         continue
 
-                    # 2. VĂNG RA HOME / MÀN HÌNH CHÍNH GAME -> SPAM LIÊN TỤC MỖI 0.5S CHO TỚI KHI VÀO LẠI MAP
-                    if not is_foreground or not is_in_game_world(pkg):
-                        print(f"\033[1;33m[-] {pkg} đang ở Màn hình chính / Chưa vào Map. Spam Intent mỗi 0.5s...\033[0m")
+                    # TRƯỜNG HỢP 2: ĐANG Ở MÀN HÌNH CHÍNH (XUẤT HIỆN KHI VĂNG HOẶC BACKGROUND) -> ÉP VÀO LẠI MAP MỤC 2
+                    if not is_foreground:
+                        print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính/Lobby. Đang đếm ngược 5s...\033[0m")
+                        if wait_with_stop_check(5): break
+                        
+                        # Sau 5s chờ trong lobby/màn hình chính -> Tự động kích hoạt ép vào lại Map/Link VIP
+                        print(f"\033[1;32m[+] Đã chờ đủ 5s! Tự động quét và kích hoạt Load lại Map/Server VIP đã chọn...\033[0m")
+                        send_detailed_alert(f"Tab {pkg} ở Màn hình chính/Lobby. Đã tự động kích hoạt Rejoin lại Map Mục 2.")
                         open_game_until_success(pkg)
                         last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
                         continue
 
-                    # 3. KIỂM TRA BỊ KICK / LỖI GAME
+                    # TRƯỜNG HỢP 3: BỊ KICK HOẶC MẤT KẾT NỐI (LOẠI BỎ THỜI GIAN TRƯỚC KHI MỞ)
                     since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
                     has_error, error_msg = check_package_error_since(pkg, since_time)
                     
                     if has_error:
-                        print(f"\033[1;31m[-] Phát hiện {pkg} lỗi [{error_msg}]! Khởi động lại & Spam Map Mục 2...\033[0m")
-                        send_detailed_alert(f"Báo lỗi trên {pkg}: [{error_msg}]. Đang ngắt ứng dụng và Spam Rejoin.")
+                        print(f"\033[1;31m[-] Phát hiện {pkg} lỗi [{error_msg}]! Tiến hành Rejoin lại Map Mục 2...\033[0m")
+                        if wait_with_stop_check(3): break
+                        
+                        send_detailed_alert(f"Báo lỗi trên {pkg}: [{error_msg}]. Đang thực hiện Rejoin Map Mục 2.")
                         close_game(pkg)
                         time.sleep(1)
                         open_game_until_success(pkg)
@@ -606,7 +580,7 @@ def start_tool():
                     start_time = time.time()
 
             if (time.time() - last_webhook_time) >= 300:
-                print("\033[1;32m[*] Đã đủ 5 phút, gửi báo cáo định kỳ (Im lặng, không ping)...\033[0m")
+                print("\033[1;32m[*] Đã đủ 5 phút, đang gửi báo cáo ảnh chụp màn hình định kỳ (Im lặng, không ping)...\033[0m")
                 send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
                 last_webhook_time = time.time()
 
@@ -830,14 +804,14 @@ if __name__ == "__main__":
                     batch = found_pkgs[i:i + batch_size]
                     for idx_b, pkg in enumerate(batch):
                         global_idx = i + idx_b + 1
-                        open_game_until_success(pkg)
+                        open_game(pkg)
                         print(f"\033[1;32m[+] Đã mở package [{global_idx}/{total_clones}]: {pkg}\033[0m")
                     if i + batch_size < total_clones:
                         print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
                         time.sleep(15)
             else:
                 for idx, pkg in enumerate(found_pkgs):
-                    open_game_until_success(pkg)
+                    open_game(pkg)
                     print(f"\033[1;32m[+] Đã mở package: {pkg}\033[0m")
                     if idx < len(found_pkgs) - 1:
                         time.sleep(CLONE_LAUNCH_DELAY)
