@@ -116,12 +116,17 @@ def get_system_info():
     }
 
 def get_hwid():
-    hwid = run_cmd(["settings", "get", "secure", "android_id"])
-    if not hwid or hwid == "null":
-        hwid = run_cmd(["getprop", "ro.serialno"])
-    if not hwid or hwid == "null":
-        hwid = "android_default_hwid"
-    return hwid
+    try:
+        board = run_cmd(["getprop", "ro.product.board"]) or "unknown_board"
+        brand = run_cmd(["getprop", "ro.product.brand"]) or "unknown_brand"
+        model = run_cmd(["getprop", "ro.product.model"]) or "unknown_model"
+        arch = run_cmd(["getprop", "ro.product.cpu.abi"]) or "unknown_arch"
+        serial = run_cmd(["getprop", "ro.serialno"]) or "unknown_serial"
+
+        raw_data = f"{board}|{brand}|{model}|{arch}|{serial}"
+        return hashlib.sha256(raw_data.encode()).hexdigest()
+    except Exception:
+        return hashlib.sha256("default_fallback_hwid".encode()).hexdigest()
 
 def check_license_curl(key, hwid):
     try:
