@@ -72,7 +72,7 @@ def print_ascii_banner():
 {PURPLE}██████╔╝███████║██║██╔██╗ ██║ {WHITE}██████╔╝█████╗  ██║██╔██╗ ██║
 {PURPLE}██╔═══╝ ██╔══██║██║██║╚██╗██║ {WHITE}██╔══██╗██╔══╝  ██║██║╚██╗██║
 {PURPLE}██║     ██║  ██║██║██║ ╚████║ {WHITE}██║  ██║███████╗██║██║ ╚████║
-{DEEP_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {DEEP_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═╝{RESET}"""
+{DEEP_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {DEEP_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝{RESET}"""
     print(banner)
 
 def run_cmd(cmd_list, timeout=15):
@@ -116,19 +116,22 @@ def get_system_info():
     }
 
 def get_hwid():
-    hwid = run_cmd(["settings", "get", "secure", "android_id"])
-    if not hwid or hwid == "null":
-        hwid = run_cmd(["getprop", "ro.serialno"])
-    if not hwid or hwid == "null":
-        hwid = "android_default_hwid"
-    return hwid
+    try:
+        board = run_cmd(["getprop", "ro.product.board"]) or "unknown_board"
+        brand = run_cmd(["getprop", "ro.product.brand"]) or "unknown_brand"
+        model = run_cmd(["getprop", "ro.product.model"]) or "unknown_model"
+        arch = run_cmd(["getprop", "ro.product.cpu.abi"]) or "unknown_arch"
+        serial = run_cmd(["getprop", "ro.serialno"]) or "unknown_serial"
+
+        raw_data = f"{board}|{brand}|{model}|{arch}|{serial}"
+        return hashlib.sha256(raw_data.encode()).hexdigest()
+    except Exception:
+        return hashlib.sha256("default_fallback_hwid".encode()).hexdigest()
 
 def check_license_curl(key, hwid):
     try:
         timestamp = int(time.time())
-        
         raw_data = f"{key}:{hwid}:{timestamp}"
-        
         signature = hmac.new(
             SECRET_KEY.encode('utf-8'),
             raw_data.encode('utf-8'),
@@ -152,11 +155,15 @@ def check_license_curl(key, hwid):
         if not res_text:
             return False, "Không kết nối được server"
 
-        data = json.loads(res_text)
-        if isinstance(data, dict):
-            return data.get("valid") is True or data.get("status") == "success", data.get("message", res_text)
+        try:
+            data = json.loads(res_text)
+            if isinstance(data, dict):
+                return data.get("valid") is True or data.get("status") == "success", data.get("reason", res_text)
+        except Exception:
+            pass
 
-        return False, "Dữ liệu trả về không hợp lệ"
+        is_valid = ("valid" in res_text.lower() and "true" in res_text.lower()) or "success" in res_text.lower()
+        return is_valid, res_text
     except Exception as e:
         return False, str(e)
 
@@ -207,7 +214,6 @@ def authenticate():
             time.sleep(2)
 
 def send_webhook(message, with_image=False):
-    """Gửi báo cáo định kỳ 5 phút đính kèm ảnh chụp màn hình (KHÔNG PING DISCORD)"""
     if not WEBHOOK_URL:
         return
     try:
@@ -272,7 +278,6 @@ def send_webhook(message, with_image=False):
         pass
 
 def send_detailed_alert(message):
-    """Gửi thông báo cảnh báo sự cố chi tiết (CÓ PING DISCORD)"""
     if not WEBHOOK_URL:
         return
     try:
@@ -361,7 +366,6 @@ def get_all_packages():
     return packages if packages else [PACKAGE_PREFIX]
 
 def close_game(pkg):
-    """Buộc dừng ứng dụng và dọn dẹp tiến trình khỏi đa nhiệm hoàn toàn"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
     cmd_kill = f"am kill {pkg}"
     cmd_force = f"am force-stop {pkg}"
@@ -374,7 +378,6 @@ def close_game(pkg):
         run_cmd(cmd_force.split())
 
 def open_game(pkg):
-    """Tắt hoàn toàn app cũ rồi mới gửi Deep Link để bắt buộc load lại Map/VIP"""
     is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
 
     close_game(pkg)
@@ -401,7 +404,6 @@ def open_game(pkg):
             run_cmd(cmd_launch.split())
 
 def is_app_running(pkg):
-    """Kiểm tra ứng dụng có còn tiến trình trong hệ thống (Đa nhiệm) hay không"""
     pid = run_cmd(["pidof", pkg], timeout=3)
     if pid:
         return True
@@ -409,7 +411,6 @@ def is_app_running(pkg):
     return pkg in ps_out
 
 def is_app_in_foreground(pkg):
-    """Kiểm tra ứng dụng có đang hiển thị trực tiếp trên màn hình hay bị ẩn xuống background"""
     dumpsys = run_cmd(["dumpsys", "window", "displays"], timeout=3)
     if not dumpsys:
         dumpsys = run_cmd(["dumpsys", "activity", "activities"], timeout=3)
