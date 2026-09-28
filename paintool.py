@@ -11,7 +11,7 @@ import hashlib
 from datetime import datetime
 
 VERSION = "v1.3.1 Beta"
-API_URL = "https://discord-license-bot-production.up.railway.app/api/verify"
+API_URL = "https://paintool-bot.onrender.com/api/verify"
 SECRET_KEY = "PainGamerSecretKey2026#VipTool"
 LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
@@ -149,8 +149,8 @@ def check_license_curl(key, hwid):
             "curl", "-s", "-X", "POST", API_URL,
             "-H", "Content-Type: application/json",
             "-d", payload,
-            "--connect-timeout", "10"
-        ], timeout=10)
+            "--connect-timeout", "60"
+        ], timeout=60)
 
         if not res_text:
             return False, "Không kết nối được server"
