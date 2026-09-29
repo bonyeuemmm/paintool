@@ -8,6 +8,8 @@ import string
 import threading
 import hmac
 import hashlib
+import re
+import shlex
 from datetime import datetime
 
 VERSION = "v1.3.1 Beta"
@@ -32,7 +34,23 @@ CLONE_LAUNCH_DELAY = 10
 stop_start = False
 START_UP_TIME = None
 
-ROBLOX_ERROR_CODES = ["277", "260", "279", "268", "267", "273", "278", "264", "261", "524"]
+# Mã lỗi Roblox khiến tab bị văng/kick/không vào được game -> tự tắt tab và vào lại.
+# 258-290: nhóm mã mất kết nối/kick (277, 279, 264, 268, 273, 278...), thêm 5xx/6xx/7xx là lỗi join/teleport.
+ROBLOX_ERROR_CODES = [str(c) for c in range(258, 291)] + ["517", "522", "523", "524", "529", "610", "769", "770", "771", "772", "773"]
+
+# Cụm từ (viết thường) báo bị kick / mất kết nối / crash trong log
+KICK_PHRASES = [
+    "you have been kicked", "you were kicked", "kicked from the game", "kicked from this experience",
+    "disconnected from game", "unexpected disconnection", "same account launched",
+    "lost connection to the game server", "connection attempt failed", "failed to connect to the game",
+    "you have been disconnected",
+]
+CRASH_PHRASES = ["fatal exception", "fatal signal"]
+
+LAUNCH_VERIFY_SECONDS = 30   # chờ tối đa bao lâu để app lên tiến trình sau khi gửi lệnh mở
+LAUNCH_MAX_RETRY = 3         # số lần thử mở lại nếu app không lên
+MAP_LOAD_WAIT = 15           # chờ map load xong (giây) sau khi app đã bật
+LOG_STATE = {}               # pkg -> (file log, số byte đã đọc), chỉ đọc phần log mới
 
 def load_saved_config():
     global WEBHOOK_URL, DISCORD_UID
@@ -75,10 +93,12 @@ def print_ascii_banner():
 {DEEP_PURPLE}╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝ {DEEP_PURPLE}╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═══╝{RESET}"""
     print(banner)
 
-def run_cmd(cmd_list, timeout=15):
+def run_cmd(cmd_list, timeout=15, merge_stderr=False):
     try:
-        res = subprocess.run(cmd_list, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
-        return res.stdout.strip()
+        res = subprocess.run(cmd_list, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=timeout, stdin=subprocess.DEVNULL)
+        out = res.stdout + ("\n" + res.stderr if merge_stderr else "")
+        return out.strip()
     except Exception:
         return ""
 
@@ -365,97 +385,230 @@ def get_all_packages():
     packages.sort()
     return packages if packages else [PACKAGE_PREFIX]
 
-def close_game(pkg):
-    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    cmd_kill = f"am kill {pkg}"
-    cmd_force = f"am force-stop {pkg}"
-    
-    if is_root:
-        run_cmd(["su", "-c", cmd_kill])
-        run_cmd(["su", "-c", cmd_force])
-    else:
-        run_cmd(cmd_kill.split())
-        run_cmd(cmd_force.split())
+# ==================== ROOT / SHELL ====================
+_ROOT_MODE = "unknown"
 
-def open_game(pkg):
-    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-
-    close_game(pkg)
-    time.sleep(1)
-
-    if TARGET_LINK:
-        if TARGET_LINK.isdigit():
-            deep_link = f"roblox://placeId={TARGET_LINK}"
-        elif not TARGET_LINK.startswith("roblox://") and not TARGET_LINK.startswith("http"):
-            deep_link = f"roblox://placeId={TARGET_LINK}"
+def root_mode():
+    """'direct' = đang chạy sẵn uid=0, 'su' = gọi được su, None = không root (kết quả được nhớ lại)."""
+    global _ROOT_MODE
+    if _ROOT_MODE == "unknown":
+        if "uid=0" in run_cmd(["id"]):
+            _ROOT_MODE = "direct"
+        elif "uid=0" in run_cmd(["su", "-c", "id"]):
+            _ROOT_MODE = "su"
         else:
-            deep_link = TARGET_LINK
-            
-        cmd_launch_link = f"am start -a android.intent.action.VIEW -d \"{deep_link}\" {pkg}"
-        if is_root:
-            run_cmd(["su", "-c", cmd_launch_link])
-        else:
-            run_cmd(cmd_launch_link.split())
-    else:
-        cmd_launch = f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"
-        if is_root:
-            run_cmd(["su", "-c", cmd_launch])
-        else:
-            run_cmd(cmd_launch.split())
+            _ROOT_MODE = None
+    return _ROOT_MODE
 
+def sh(cmd, timeout=15):
+    """Chạy 1 lệnh shell dạng chuỗi (có pipe được). Có root thì chạy qua su."""
+    if root_mode() == "su":
+        return run_cmd(["su", "-c", cmd], timeout=timeout)
+    return run_cmd(["sh", "-c", cmd], timeout=timeout)
+
+def sh_args(args, timeout=15, merge_stderr=False):
+    """Chạy 1 lệnh dạng list (tự quote đúng khi qua su, không bị lỗi dấu nháy/ký tự & trong link)."""
+    if root_mode() == "su":
+        quoted = " ".join(shlex.quote(a) for a in args)
+        return run_cmd(["su", "-c", quoted], timeout=timeout, merge_stderr=merge_stderr)
+    return run_cmd(args, timeout=timeout, merge_stderr=merge_stderr)
+
+# ==================== MỞ / ĐÓNG GAME ====================
 def is_app_running(pkg):
-    pid = run_cmd(["pidof", pkg], timeout=3)
-    if pid:
+    if sh(f"pidof {pkg}", timeout=3):
         return True
-    ps_out = run_cmd(["ps", "-A"], timeout=3)
-    return pkg in ps_out
+    return pkg in sh("ps -A", timeout=3)
 
 def is_app_in_foreground(pkg):
-    dumpsys = run_cmd(["dumpsys", "window", "displays"], timeout=3)
+    dumpsys = sh("dumpsys window displays", timeout=3)
     if not dumpsys:
-        dumpsys = run_cmd(["dumpsys", "activity", "activities"], timeout=3)
+        dumpsys = sh("dumpsys activity activities", timeout=3)
     return pkg in dumpsys and "mCurrentFocus" in dumpsys
 
-def open_game_until_success(pkg):
-    print(f"\033[1;33m[*] Kích hoạt lại {pkg} và tải trực tiếp Map Mục 2...\033[0m")
-    open_game(pkg)
-    print(f"\033[1;33m[*] Đã gửi lệnh load Map. Chờ 15s để ổn định...\033[0m")
-    wait_with_stop_check(15)
+def close_game(pkg):
+    """Tắt hẳn tab: force-stop + kill, nếu tiến trình còn sống thì kill -9."""
+    sh(f"am force-stop {pkg}")
+    sh(f"am kill {pkg}")
+    time.sleep(0.5)
+    for _ in range(3):
+        if not is_app_running(pkg):
+            break
+        sh(f"kill -9 $(pidof {pkg})", timeout=5)
+        time.sleep(0.5)
 
-def check_package_error_since(pkg, since_time_str):
-    is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-    
-    if is_root:
-        log_dir = f"/data/data/{pkg}/files/logs"
-        latest_log = run_cmd(["su", "-c", f"ls -t {log_dir}/*.log 2>/dev/null | head -n 1"])
-        if latest_log and "No such file" not in latest_log:
-            log_content = run_cmd(["su", "-c", f"tail -n 60 {latest_log}"])
-            if log_content:
-                log_lower = log_content.lower()
-                for code in ROBLOX_ERROR_CODES:
-                    if f"error code: {code}" in log_lower or f"disconnection notification: {code}" in log_lower or f"code: {code}" in log_lower:
-                        return True, f"Mã Lỗi {code}"
-                if "disconnected" in log_lower or "kicked" in log_lower:
-                    return True, "Bị Kick / Mất kết nối (Log File)"
+def build_deep_link():
+    if not TARGET_LINK:
+        return None
+    if TARGET_LINK.startswith("roblox://") or TARGET_LINK.startswith("http"):
+        return TARGET_LINK
+    return f"roblox://placeId={TARGET_LINK}"
 
-    if is_root:
-        log_output = run_cmd(["su", "-c", f"logcat -d -t '{since_time_str}'"], timeout=4)
-    else:
-        log_output = run_cmd(["logcat", "-d", "-t", since_time_str], timeout=4)
+def launch_commands(pkg):
+    """Các cách mở game, ưu tiên cách đầu; lỗi thì dùng cách dự phòng.
+    --activity-clear-task: xóa task cũ của app, tab mới thay thế hẳn tab cũ trong Đa nhiệm."""
+    deep_link = build_deep_link()
+    if deep_link:
+        base = ["am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link]
+        return [base + ["--activity-clear-task", pkg], base + [pkg]]
+    main = ["am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"]
+    return [main + ["--activity-clear-task", pkg],
+            ["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"]]
 
-    if log_output:
-        kick_keywords = ['you have been kicked', 'disconnected from game', 'unexpected disconnection', 'same account launched', 'error code']
-        for line in log_output.splitlines():
-            line_lower = line.lower()
-            if pkg in line_lower or "roblox" in line_lower:
-                for code in ROBLOX_ERROR_CODES:
-                    if code in line_lower and ("error" in line_lower or "code" in line_lower or "disconnect" in line_lower):
-                        return True, f"Mã Lỗi {code}"
-                if any(k in line_lower for k in kick_keywords):
-                    return True, "Bị Kick / Mất kết nối (Logcat)"
+def open_game(pkg, close_first=True):
+    if close_first:
+        close_game(pkg)
+        time.sleep(1)
+    snapshot_log_baseline(pkg)  # log cũ trước thời điểm này sẽ bị bỏ qua
+    for cmd in launch_commands(pkg):
+        out = sh_args(cmd, merge_stderr=True).lower()
+        if not any(w in out for w in ("error", "exception", "unable to resolve", "unknown option")):
+            return True
+    return False
 
+def open_game_until_success(pkg, close_first=True):
+    """Mở game + vào map. Không thấy app lên tiến trình thì thử lại tối đa LAUNCH_MAX_RETRY lần."""
+    for attempt in range(1, LAUNCH_MAX_RETRY + 1):
+        if stop_start:
+            return False
+        print(f"\033[1;33m[*] Mở {pkg} và tải Map (lần {attempt}/{LAUNCH_MAX_RETRY})...\033[0m")
+        open_game(pkg, close_first=(close_first or attempt > 1))
+
+        started = False
+        for _ in range(max(1, LAUNCH_VERIFY_SECONDS // 2)):
+            if wait_with_stop_check(2):
+                return False
+            if is_app_running(pkg):
+                started = True
+                break
+
+        if started:
+            print(f"\033[1;33m[*] {pkg} đã bật. Chờ {MAP_LOAD_WAIT}s để Map ổn định...\033[0m")
+            wait_with_stop_check(MAP_LOAD_WAIT)
+            return True
+        print(f"\033[1;31m[!] {pkg} chưa lên sau {LAUNCH_VERIFY_SECONDS}s, thử mở lại...\033[0m")
+
+    print(f"\033[1;31m[!] Không mở được {pkg} sau {LAUNCH_MAX_RETRY} lần.\033[0m")
+    return False
+
+# ==================== PHÁT HIỆN KICK / VĂNG / CRASH ====================
+_CODE_REGEXES = [
+    re.compile(r"error\s*code[:\s=]*\(?(\d{3})\b"),
+    re.compile(r"disconnection\s*notification[^0-9\n]{0,40}(\d{3})\b"),
+    re.compile(r"sending\s*disconnect\s*with\s*reason[:\s]*(\d{3})\b"),
+    re.compile(r"\bcode[:\s=]+(\d{3})\b"),
+]
+
+def scan_text_for_problem(text, check_crash=False):
+    """Trả về (True, lý do) nếu text có mã lỗi / cụm từ kick, mất kết nối (và crash nếu check_crash)."""
+    if not text:
+        return False, None
+    low = text.lower()
+    for rx in _CODE_REGEXES:
+        for m in rx.finditer(low):
+            if m.group(1) in ROBLOX_ERROR_CODES:
+                return True, f"Mã Lỗi {m.group(1)}"
+    for phrase in KICK_PHRASES:
+        if phrase in low:
+            return True, "Bị Kick / Mất kết nối"
+    if check_crash:
+        for phrase in CRASH_PHRASES:
+            if phrase in low:
+                return True, "Game bị Crash"
     return False, None
 
+def log_dirs(pkg):
+    return [
+        f"/data/data/{pkg}/files/logs",
+        f"/data/data/{pkg}/files/appData/logs",
+        f"/sdcard/Android/data/{pkg}/files/logs",
+    ]
+
+def get_latest_log_file(pkg):
+    if not root_mode():
+        return None
+    globs = " ".join(f"{d}/*.log {d}/*.txt" for d in log_dirs(pkg))
+    out = sh(f"ls -t {globs} 2>/dev/null | head -n 1", timeout=5)
+    first = out.splitlines()[0].strip() if out else ""
+    return first if first.startswith("/") else None
+
+def get_file_size(path):
+    out = sh(f"stat -c %s '{path}' 2>/dev/null || wc -c < '{path}'", timeout=5)
+    try:
+        return int(out.split()[0])
+    except Exception:
+        return 0
+
+def snapshot_log_baseline(pkg):
+    """Ghi nhớ vị trí cuối log hiện tại: từ giờ chỉ đọc phần log MỚI, log cũ không bị bắt lại."""
+    path = get_latest_log_file(pkg)
+    LOG_STATE[pkg] = (path, get_file_size(path) if path else 0)
+
+def read_new_log_text(pkg):
+    path = get_latest_log_file(pkg)
+    if not path:
+        return ""
+    if pkg not in LOG_STATE:
+        LOG_STATE[pkg] = (path, get_file_size(path))
+        return ""
+    old_path, offset = LOG_STATE[pkg]
+    size = get_file_size(path)
+    if path != old_path or size < offset:
+        offset = 0  # game mở lại → file log mới
+    LOG_STATE[pkg] = (path, size)
+    if size <= offset:
+        return ""
+    return sh(f"tail -c +{offset + 1} '{path}'", timeout=8)
+
+def check_logcat_problem(pkg):
+    """Đọc logcat theo PID của đúng tab này (không lẫn lỗi của các clone khác)."""
+    pids = sh(f"pidof {pkg}", timeout=3).split()
+    if not pids:
+        return False, None
+    out = sh(f"logcat -d --pid={pids[0]} -t 500", timeout=6)
+    return scan_text_for_problem(out, check_crash=True)
+
+def check_package_error(pkg):
+    found, reason = scan_text_for_problem(read_new_log_text(pkg))
+    if found:
+        return True, f"{reason} (Log File)"
+    found, reason = check_logcat_problem(pkg)
+    if found:
+        return True, f"{reason} (Logcat)"
+    return False, None
+
+def detect_problem(pkg):
+    """Kiểm tra 1 tab. Trả về lý do nếu cần rejoin, không có vấn đề thì trả về None."""
+    if not is_app_running(pkg):
+        return "Tab bị tắt Đa nhiệm / Game crash (không còn tiến trình)"
+
+    if not is_app_in_foreground(pkg):
+        print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính/Lobby. Đang đếm ngược 5s...\033[0m")
+        if wait_with_stop_check(5):
+            return None
+        if not is_app_running(pkg):
+            return "Tab bị tắt Đa nhiệm / Game crash (không còn tiến trình)"
+        if not is_app_in_foreground(pkg):
+            return "Bị thoát ra Màn hình chính / Lobby"
+        return None
+
+    has_error, reason = check_package_error(pkg)
+    return reason if has_error else None
+
+def notify_async(message):
+    """Gửi cảnh báo Discord ở luồng riêng để không làm chậm việc rejoin."""
+    if WEBHOOK_URL:
+        threading.Thread(target=send_detailed_alert, args=(message,), daemon=True).start()
+
+def recover_tab(pkg, reason):
+    """Bị kick/văng/crash: tắt tab (force-stop, xóa task Đa nhiệm) → mở lại game → vào Map."""
+    print(f"\033[1;31m[-] Phát hiện {pkg} lỗi [{reason}]! Tắt tab Đa nhiệm rồi vào lại Map...\033[0m")
+    notify_async(f"Phát hiện lỗi trên {pkg}: [{reason}]. Đã tắt tab Đa nhiệm, đang vào lại game/Map.")
+    close_game(pkg)
+    if wait_with_stop_check(2):
+        return
+    open_game_until_success(pkg, close_first=False)
+
+# ==================== VÒNG LẶP CHÍNH ====================
 def listen_for_stop():
     global stop_start
     while not stop_start:
@@ -476,15 +629,38 @@ def wait_with_stop_check(seconds, message=""):
         time.sleep(1)
     return False
 
+def launch_all(packages):
+    """Mở lần lượt các tab (>=4 tab: nhóm 3 tab, cách nhau 15s)."""
+    total = len(packages)
+    if total >= 4:
+        batch_size = 3
+        for i in range(0, total, batch_size):
+            if stop_start: break
+            for idx_b, pkg in enumerate(packages[i:i + batch_size]):
+                if stop_start: break
+                print(f"\033[1;36m[*] Đang khởi chạy Tab [{i + idx_b + 1}/{total}]: {pkg}\033[0m")
+                open_game_until_success(pkg)
+            if i + batch_size < total and not stop_start:
+                print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
+                if wait_with_stop_check(15): break
+    else:
+        for idx, pkg in enumerate(packages):
+            if stop_start: break
+            print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx + 1}/{total}]: {pkg}\033[0m")
+            open_game_until_success(pkg)
+            if idx < total - 1:
+                print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
+                if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
+
 def start_tool():
     global stop_start, START_UP_TIME
+    stop_start = False
     clear_screen()
     print_ascii_banner()
     packages = get_all_packages()
     START_UP_TIME = datetime.now()
-    
-    last_launch_timestamp = {}
-    
+    LOG_STATE.clear()
+
     print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
     print(f"\033[1;32m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
     if len(packages) >= 4:
@@ -494,30 +670,10 @@ def start_tool():
     print("\033[1;33m[*] Bấm phím 0 rồi nhấn Enter để ngắt Start.\033[0m")
     print("--------------------------------------------------")
 
-    if len(packages) >= 4:
-        batch_size = 3
-        total_clones = len(packages)
-        for i in range(0, total_clones, batch_size):
-            if stop_start: break
-            batch = packages[i:i + batch_size]
-            for idx_b, pkg in enumerate(batch):
-                if stop_start: break
-                global_idx = i + idx_b + 1
-                print(f"\033[1;36m[*] Đang khởi chạy Tab [{global_idx}/{total_clones}]: {pkg}\033[0m")
-                open_game_until_success(pkg)
-                last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-            if i + batch_size < total_clones and not stop_start:
-                print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
-                if wait_with_stop_check(15): break
-    else:
-        for idx, pkg in enumerate(packages):
-            if stop_start: break
-            print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx+1}/{len(packages)}]: {pkg}\033[0m")
-            open_game_until_success(pkg)
-            last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-            if idx < len(packages) - 1:
-                print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
-                if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
+    listener = threading.Thread(target=listen_for_stop, daemon=True)
+    listener.start()
+
+    launch_all(packages)
 
     if not stop_start:
         send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
@@ -525,10 +681,6 @@ def start_tool():
     start_time = time.time()
     last_webhook_time = time.time()
     last_cleanup_time = time.time()
-    
-    stop_start = False
-    listener = threading.Thread(target=listen_for_stop, daemon=True)
-    listener.start()
 
     try:
         while not stop_start:
@@ -546,41 +698,9 @@ def start_tool():
             if AUTO_REJOIN_MODE == 1:
                 for pkg in packages:
                     if stop_start: break
-                    
-                    has_process = is_app_running(pkg)
-                    is_foreground = is_app_in_foreground(pkg)
-
-                    if not has_process:
-                        print(f"\033[1;31m[-] Tab {pkg} vừa bị đóng Đa nhiệm! Mở lại và chuyển ngay vào Map Mục 2...\033[0m")
-                        send_detailed_alert(f"Tab {pkg} bị đóng Đa nhiệm! Mở lại và load Map ngay lập tức.")
-                        open_game_until_success(pkg)
-                        last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                        continue
-
-                    if not is_foreground:
-                        print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính/Lobby. Đang đếm ngược 5s...\033[0m")
-                        if wait_with_stop_check(5): break
-                        
-                        print(f"\033[1;32m[+] Đã chờ đủ 5s! Tự động đóng hẳn app và Load lại Map/Server VIP đã chọn...\033[0m")
-                        send_detailed_alert(f"Tab {pkg} ở Màn hình chính/Lobby. Đang buộc dừng ứng dụng và Rejoin Map Mục 2.")
-                        close_game(pkg)
-                        time.sleep(1)
-                        open_game_until_success(pkg)
-                        last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                        continue
-
-                    since_time = last_launch_timestamp.get(pkg, datetime.now().strftime("%m-%d %H:%M:%S.000"))
-                    has_error, error_msg = check_package_error_since(pkg, since_time)
-                    
-                    if has_error:
-                        print(f"\033[1;31m[-] Phát hiện {pkg} bị lỗi [{error_msg}]! Tiến hành đóng ứng dụng, xóa đa nhiệm và Rejoin...\033[0m")
-                        send_detailed_alert(f"Phát hiện lỗi trên {pkg}: [{error_msg}]. Đã đóng app, xóa đa nhiệm và Rejoin lại Map Mục 2.")
-                        
-                        close_game(pkg)
-                        time.sleep(2)
-                        
-                        open_game_until_success(pkg)
-                        last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
+                    reason = detect_problem(pkg)
+                    if reason:
+                        recover_tab(pkg, reason)
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
@@ -588,26 +708,7 @@ def start_tool():
                     for pkg in packages:
                         close_game(pkg)
                     time.sleep(3)
-                    
-                    if len(packages) >= 4:
-                        batch_size = 3
-                        total_clones = len(packages)
-                        for i in range(0, total_clones, batch_size):
-                            if stop_start: break
-                            batch = packages[i:i + batch_size]
-                            for idx_b, pkg in enumerate(batch):
-                                if stop_start: break
-                                open_game_until_success(pkg)
-                                last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                            if i + batch_size < total_clones and not stop_start:
-                                if wait_with_stop_check(15): break
-                    else:
-                        for idx, pkg in enumerate(packages):
-                            if stop_start: break
-                            open_game_until_success(pkg)
-                            last_launch_timestamp[pkg] = datetime.now().strftime("%m-%d %H:%M:%S.000")
-                            if idx < len(packages) - 1:
-                                if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
+                    launch_all(packages)
                     start_time = time.time()
 
             if (time.time() - last_webhook_time) >= 300:
@@ -626,6 +727,7 @@ def start_tool():
         print("\n\033[1;31m[!] Đã dừng Start.\033[0m")
         time.sleep(1)
         return
+
 
 def show_banner():
     clear_screen()
