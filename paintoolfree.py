@@ -3,36 +3,33 @@ import sys
 import time
 import subprocess
 import json
-import random
-import string
 import threading
-import hmac
-import hashlib
 import re
 import shlex
 from datetime import datetime
+from dotenv import load_dotenv
 
-VERSION = "v1.3.1 Beta"
-API_URL = "https://paintool-bot.onrender.com/api/verify"
-SECRET_KEY = "PainGamerSecretKey2026#VipTool"
-LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
+# Nạp cấu hình từ file .env riêng biệt
+load_dotenv()
+
+VERSION = "v1.3.3"
+
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
 
-PACKAGE_PREFIX = "com.roblox"
+# Lấy webhook từ file .env, nếu không có file .env sẽ để rỗng
+SEND_TEXT_WEBHOOK = os.getenv("SEND_TEXT_WEBHOOK", "")
+
+MAX_PACKAGES = 5             # tối đa số package name được thêm
+PACKAGE_NAMES = []           # danh sách package name (tab clone) tool sẽ chạy
+PKG_NAME_RX = re.compile(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+")
 TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
-WEBHOOK_URL = ""
-DISCORD_UID = ""
-SEND_TEXT_WEBHOOK = "https://discord.com/api/webhooks/1548235071671238656/sk5oitBIvUXLeYB7phyO-dHkf7NTyuBsqBeQJq2emcyFYTk1ll0dl5-uqg-bhDiINmYV"
-SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 DISCORD_LINK = "https://discord.gg/z7RUNArBuJ"
 
-AUTO_REJOIN_MODE = 1
-DELAY_REJOIN_MINUTES = 1
+DELAY_REJOIN_MINUTES = 1     # chu kỳ delay rejoin (phút): hết chu kỳ tự tắt Đa nhiệm rồi vào lại Map
 CLONE_LAUNCH_DELAY = 10
 stop_start = False
-START_UP_TIME = None
 
 # Mã lỗi Roblox khiến tab bị văng/kick/không vào được game -> tự tắt tab và vào lại.
 # 258-290: nhóm mã mất kết nối/kick (277, 279, 264, 268, 273, 278...), thêm 5xx/6xx/7xx là lỗi join/teleport.
@@ -51,27 +48,39 @@ LAUNCH_VERIFY_SECONDS = 30   # chờ tối đa bao lâu để app lên tiến tr
 LAUNCH_MAX_RETRY = 3         # số lần thử mở lại nếu app không lên
 MAP_LOAD_WAIT = 15           # chờ map load xong (giây) sau khi app đã bật
 LOG_STATE = {}               # pkg -> (file log, số byte đã đọc), chỉ đọc phần log mới
+RETRY_COUNTDOWN_SECONDS = 5  # tab không vào lại được game: đếm ngược bấy nhiêu giây rồi tắt Đa nhiệm và vào lại
+LOGCAT_BASELINE = {}         # pkg -> mốc thời gian (epoch) logcat đã đọc tới, chỉ lấy dòng mới hơn mốc này
 
-def load_saved_config():
-    global WEBHOOK_URL, DISCORD_UID
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                WEBHOOK_URL = data.get("webhook_url", "")
-                DISCORD_UID = data.get("discord_uid", "")
-        except Exception:
-            pass
+# ==================== TIỆN ÍCH GIAO DIỆN / PHẢN HỒI ====================
+GREEN = "\033[1;32m"
+RED = "\033[1;31m"
+YELLOW = "\033[1;33m"
+CYAN = "\033[1;36m"
+WHITE = "\033[1;37m"
+RESET = "\033[0m"
 
-def save_config_file():
+def msg_ok(text):
+    print(f"{GREEN}[✓] {text}{RESET}")
+
+def msg_err(text):
+    print(f"{RED}[✗] {text}{RESET}")
+
+def msg_warn(text):
+    print(f"{YELLOW}[!] {text}{RESET}")
+
+def msg_info(text):
+    print(f"{CYAN}[*] {text}{RESET}")
+
+def ack_choice(label, delay=0.7):
+    """Xác nhận ngay mục người dùng vừa chọn trước khi thực hiện."""
+    print(f"{CYAN}[»] Bạn đã chọn: {WHITE}{label}{RESET}")
+    time.sleep(delay)
+
+def pause(text="Ấn Enter để tiếp tục..."):
+    """Dừng lại cho người dùng đọc thông báo trước khi màn hình bị xóa."""
     try:
-        data = {
-            "webhook_url": WEBHOOK_URL,
-            "discord_uid": DISCORD_UID
-        }
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception:
+        input(f"\n{CYAN}{text}{RESET}")
+    except (EOFError, KeyboardInterrupt):
         pass
 
 def clear_screen():
@@ -135,221 +144,131 @@ def get_system_info():
         "battery": battery_info
     }
 
-def get_hwid():
+def load_saved_config():
+    """Nạp danh sách package name đã lưu (lọc lại cho hợp lệ, tối đa MAX_PACKAGES)."""
     try:
-        board = run_cmd(["getprop", "ro.product.board"]) or "unknown_board"
-        brand = run_cmd(["getprop", "ro.product.brand"]) or "unknown_brand"
-        model = run_cmd(["getprop", "ro.product.model"]) or "unknown_model"
-        arch = run_cmd(["getprop", "ro.product.cpu.abi"]) or "unknown_arch"
-        serial = run_cmd(["getprop", "ro.serialno"]) or "unknown_serial"
-
-        raw_data = f"{board}|{brand}|{model}|{arch}|{serial}"
-        return hashlib.sha256(raw_data.encode()).hexdigest()
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
     except Exception:
-        return hashlib.sha256("default_fallback_hwid".encode()).hexdigest()
+        return
+    names = data.get("packages", []) if isinstance(data, dict) else []
+    PACKAGE_NAMES.clear()
+    for n in names if isinstance(names, list) else []:
+        if isinstance(n, str) and PKG_NAME_RX.fullmatch(n) and n not in PACKAGE_NAMES and len(PACKAGE_NAMES) < MAX_PACKAGES:
+            PACKAGE_NAMES.append(n)
 
-def check_license_curl(key, hwid):
+def save_config_file():
     try:
-        timestamp = int(time.time())
-        raw_data = f"{key}:{hwid}:{timestamp}"
-        signature = hmac.new(
-            SECRET_KEY.encode('utf-8'),
-            raw_data.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump({"packages": PACKAGE_NAMES}, f, ensure_ascii=False, indent=4)
+    except Exception:
+        pass
 
-        payload = json.dumps({
-            "key": key,
-            "hwid": hwid,
-            "timestamp": timestamp,
-            "signature": signature
-        })
+def get_all_packages():
+    return list(PACKAGE_NAMES)
 
-        res_text = run_cmd([
-            "curl", "-s", "-X", "POST", API_URL,
-            "-H", "Content-Type: application/json",
-            "-d", payload,
-            "--connect-timeout", "60"
-        ], timeout=60)
+def is_package_installed(pkg):
+    """True/False = máy có / chưa cài package. None = không truy vấn được `pm` (khi đó cho thêm nhưng có cảnh báo)."""
+    if not run_cmd(["pm", "list", "packages", "android"]):
+        return None
+    return f"package:{pkg}" in run_cmd(["pm", "list", "packages", pkg]).split()
 
-        if not res_text:
-            return False, "Không kết nối được server"
+def print_package_list():
+    print(f"\033[1;37mPackage name đang dùng ({len(PACKAGE_NAMES)}/{MAX_PACKAGES}):\033[0m")
+    if not PACKAGE_NAMES:
+        print("  (chưa có package nào)")
+    for i, p in enumerate(PACKAGE_NAMES, 1):
+        print(f"  \033[1;36m{i}.\033[0m {p}")
 
-        try:
-            data = json.loads(res_text)
-            if isinstance(data, dict):
-                return data.get("valid") is True or data.get("status") == "success", data.get("reason", res_text)
-        except Exception:
-            pass
-
-        is_valid = ("valid" in res_text.lower() and "true" in res_text.lower()) or "success" in res_text.lower()
-        return is_valid, res_text
-    except Exception as e:
-        return False, str(e)
-
-def authenticate():
-    hwid = get_hwid()
-    if os.path.exists(LICENSE_FILE):
-        try:
-            with open(LICENSE_FILE, "r") as f:
-                input_key = f.read().strip()
-            if input_key:
-                print("\033[1;32m[*] Đang kiểm tra Key đã lưu...\033[0m")
-                is_valid, _ = check_license_curl(input_key, hwid)
-                if is_valid:
-                    print("\033[1;32m[+] Tự động xác thực bản quyền thành công!\033[0m")
-                    time.sleep(1)
-                    return
-                else:
-                    if os.path.exists(LICENSE_FILE):
-                        os.remove(LICENSE_FILE)
-        except Exception:
-            pass
-
+def package_name_menu():
     while True:
         clear_screen()
-        print_ascii_banner()
-        print("\033[1;32m==================================================\033[0m")
-        print(f"\033[1;37m                 XÁC THỰC BẢN QUYỀN               \033[0m")
-        print("\033[1;32m==================================================\033[0m")
-        print(f"\033[1;36m HWID hiện tại: {hwid}\033[0m")
-        input_key = input("Nhập Key (0 để thoát): ").strip()
-        if input_key in ["exit", "0"]:
-            sys.exit(0)
-        if not input_key:
-            continue
-        print("\033[1;32m[*] Đang kết nối máy chủ...\033[0m")
-        is_valid, response_text = check_license_curl(input_key, hwid)
-        if is_valid:
-            try:
-                with open(LICENSE_FILE, "w") as f:
-                    f.write(input_key)
-            except:
-                pass
-            print("\033[1;32m[+] Xác thực Key thành công!\033[0m")
-            time.sleep(1)
-            break
-        else:
-            print("\033[1;31m[!] Thất bại: Key không hợp lệ hoặc sai HWID.\033[0m")
-            time.sleep(2)
-
-def send_webhook(message, with_image=False):
-    if not WEBHOOK_URL:
-        return
-    try:
-        now = datetime.now()
-        footer_text = "MADE BY PAIN"
-        packages = get_all_packages()
-        rejoin_mode_str = "Auto rejoin vang/kicked" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
-        start_time_str = START_UP_TIME.strftime('%d/%m/%Y %H:%M:%S') if START_UP_TIME else "Mới khởi chạy"
-        
-        description_text = (
-            f"**{message}**\n\n"
-            f"📊 **Thông tin hệ thống:**\n"
-            f"• **Phiên bản:** {VERSION}\n"
-            f"• **Thời gian khởi động:** {start_time_str}\n"
-            f"• **Số Tab đang treo:** {len(packages)} tab ({PACKAGE_PREFIX})\n"
-            f"• **Chế độ Game:** {SELECTED_GAME_NAME}\n"
-            f"• **Cơ chế Rejoin:** {rejoin_mode_str}\n"
-            f"• **Thời gian báo cáo:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
-        )
-
-        embed_obj = {
-            "title": f"PAIN TOOL REJOIN VIP STATUS ({VERSION})",
-            "description": description_text,
-            "color": 65280,
-            "footer": {"text": footer_text}
-        }
-
-        payload_dict = {
-            "username": "PAIN TOOL REJOIN VIP",
-            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-            "embeds": [embed_obj]
-        }
-
-        if with_image:
-            is_root = run_cmd(["id"]).find("uid=0") != -1 or run_cmd(["su", "-c", "id"]).find("uid=0") != -1
-            if is_root:
-                run_cmd(["su", "-c", f"screencap -p {SCREENSHOT_PATH}"])
+        print(f"{GREEN}=== PACKAGE NAME ==={RESET}")
+        print_package_list()
+        print()
+        print(f"{WHITE}1. Add package name{RESET}")
+        print(f"{WHITE}2. Remove package name{RESET}")
+        print(f"{GREEN}0. Quay lại menu chính{RESET}")
+        sub = input("Chọn: ").strip()
+        if sub == "0":
+            msg_info("Đang quay lại menu chính...")
+            time.sleep(0.8)
+            return
+        if sub == "1":
+            ack_choice("1. Add package name")
+            if len(PACKAGE_NAMES) >= MAX_PACKAGES:
+                msg_err(f"Đã đủ {MAX_PACKAGES} package, hãy Remove bớt trước khi thêm.")
+                pause()
+                continue
+            name = input("Nhập package name cần thêm (Enter để hủy): ").strip()
+            if not name:
+                msg_warn("Đã hủy thao tác thêm package name.")
+                time.sleep(1.2)
+                continue
+            if not PKG_NAME_RX.fullmatch(name):
+                msg_err("Package name không hợp lệ (ví dụ: com.roblox.client).")
+            elif name in PACKAGE_NAMES:
+                msg_warn("Package này đã có trong danh sách, không cần thêm lại.")
             else:
-                run_cmd(["screencap", "-p", SCREENSHOT_PATH])
-
-            if os.path.exists(SCREENSHOT_PATH) and os.path.getsize(SCREENSHOT_PATH) > 0:
-                embed_obj["image"] = {"url": "attachment://screenshot.png"}
-                payload_json = json.dumps(payload_dict)
-                run_cmd([
-                    "curl", "-s", "-X", "POST", WEBHOOK_URL,
-                    "-F", f"payload_json={payload_json}",
-                    "-F", f"files[0]=@{SCREENSHOT_PATH};filename=screenshot.png"
-                ], timeout=20)
-                try:
-                    os.remove(SCREENSHOT_PATH)
-                except Exception:
-                    run_cmd(["su", "-c", f"rm -f {SCREENSHOT_PATH}"])
-                return
-
-        payload_json = json.dumps(payload_dict)
-        run_cmd([
-            "curl", "-s", "-X", "POST", WEBHOOK_URL,
-            "-H", "Content-Type: application/json",
-            "-d", payload_json
-        ], timeout=15)
-    except Exception:
-        pass
-
-def send_detailed_alert(message):
-    if not WEBHOOK_URL:
-        return
-    try:
-        now = datetime.now()
-        ping_str = f"<@{DISCORD_UID}>" if DISCORD_UID else ""
-        description_text = (
-            f"⚠️ **CẢNH BÁO CHI TIẾT HỆ THỐNG** ⚠️\n\n"
-            f"{message}\n\n"
-            f"🕐 **Thời gian:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
-        )
-        embed_obj = {
-            "title": f"PAIN TOOL ALERT ({VERSION})",
-            "description": description_text,
-            "color": 16711680,
-            "footer": {"text": "MADE BY PAIN"}
-        }
-        payload_dict = {
-            "username": "PAIN TOOL REJOIN VIP",
-            "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
-            "embeds": [embed_obj]
-        }
-        if ping_str:
-            payload_dict["content"] = ping_str
-
-        payload_json = json.dumps(payload_dict)
-        run_cmd([
-            "curl", "-s", "-X", "POST", WEBHOOK_URL,
-            "-H", "Content-Type: application/json",
-            "-d", payload_json
-        ], timeout=10)
-    except Exception:
-        pass
+                installed = is_package_installed(name)
+                if installed is False:
+                    msg_err(f"Máy chưa cài package '{name}'.")
+                else:
+                    PACKAGE_NAMES.append(name)
+                    save_config_file()
+                    msg_ok(f"Đã thêm package {name} thành công ({len(PACKAGE_NAMES)}/{MAX_PACKAGES}) và lưu cấu hình!")
+                    if installed is None:
+                        msg_warn("Không kiểm tra được package đã cài hay chưa (không đọc được `pm`), hãy tự kiểm tra tên.")
+            pause()
+        elif sub == "2":
+            ack_choice("2. Remove package name")
+            if not PACKAGE_NAMES:
+                msg_warn("Chưa có package nào để xóa.")
+                pause()
+                continue
+            name = input("Nhập package name cần xóa (hoặc số thứ tự, Enter để hủy): ").strip()
+            if not name:
+                msg_warn("Đã hủy thao tác xóa package name.")
+                time.sleep(1.2)
+                continue
+            if name.isdigit() and 1 <= int(name) <= len(PACKAGE_NAMES):
+                name = PACKAGE_NAMES[int(name) - 1]
+            if name in PACKAGE_NAMES:
+                PACKAGE_NAMES.remove(name)
+                save_config_file()
+                msg_ok(f"Đã xóa package {name} thành công ({len(PACKAGE_NAMES)}/{MAX_PACKAGES}) và lưu cấu hình!")
+            else:
+                msg_err(f"'{name}' không có trong danh sách.")
+            pause()
+        else:
+            msg_err("Lựa chọn không hợp lệ, vui lòng chọn 0, 1 hoặc 2.")
+            time.sleep(1.2)
 
 def handle_send_text():
     while True:
         clear_screen()
-        print("\033[1;32m=== SEND TEXT TO DISCORD ===\033[0m")
+        print(f"{GREEN}=== SEND TEXT TO DISCORD ==={RESET}")
+
+        if not SEND_TEXT_WEBHOOK:
+            msg_err("Không tìm thấy link Webhook! Vui lòng kiểm tra lại ")
+            pause()
+            return
+
         content_input = input("Nhập nội dung muốn gửi (Để trống để thoát): ").strip()
         if not content_input:
-            print("\033[1;33m[-] Đã thoát về giao diện chính.\033[0m")
+            msg_info("Đã thoát về giao diện chính.")
             time.sleep(1)
             return
-            
+
         discord_id = input("Nhập UID tài khoản Discord (Để trống để bỏ qua): ").strip()
         now = datetime.now()
         footer_text = "MADE BY PAIN"
-        
+
         user_tag_str = f"<@{discord_id}>" if discord_id else "Ẩn danh"
         uid_str = discord_id if discord_id else "Không có"
-        
+
         description_text = (
-            f"Bạn có nội dung gửi từ PAIN TOOL REJOIN VIP ({VERSION})\n\n"
+            f"Bạn có nội dung gửi từ PAIN TOOL REJOIN ({VERSION})\n\n"
             f"{content_input}\n\n"
             "👤 Thông tin người gửi:\n"
             f"• Tên người dùng: {user_tag_str}\n"
@@ -357,33 +276,23 @@ def handle_send_text():
             "🕐 Thời gian gửi:\n"
             f"{now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
         )
-        
+
         embed_data = {
-            "username": "PAIN TOOL REJOIN VIP",
+            "username": "PAIN TOOL REJOIN",
             "avatar_url": "https://i.postimg.cc/gJbhCmHL/Pain-Gamer.png",
             "embeds": [{"description": description_text, "footer": {"text": footer_text}, "color": 65280}]
         }
         if discord_id:
             embed_data["content"] = f"<@{discord_id}>"
-        
-        try:
-            payload = json.dumps(embed_data)
-            run_cmd(["curl", "-s", "-X", "POST", SEND_TEXT_WEBHOOK, "-H", "Content-Type: application/json", "-d", payload])
-            print("\033[1;32m[+] Đã gửi nội dung thành công qua Webhook!\033[0m")
-        except Exception as e:
-            print(f"\033[1;31m[-] Lỗi gửi webhook: {e}\033[0m")
-        time.sleep(2)
 
-def get_all_packages():
-    output = run_cmd(["pm", "list", "packages"])
-    packages = []
-    for line in output.splitlines():
-        if PACKAGE_PREFIX in line:
-            parts = line.split(":")
-            if len(parts) > 1:
-                packages.append(parts[1].strip())
-    packages.sort()
-    return packages if packages else [PACKAGE_PREFIX]
+        msg_info("Đang gửi nội dung tới Discord, vui lòng chờ...")
+        code = run_cmd(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", SEND_TEXT_WEBHOOK,
+                        "-H", "Content-Type: application/json", "-d", json.dumps(embed_data)], timeout=20)
+        if code.startswith("2"):
+            msg_ok("Đã gửi nội dung thành công qua Webhook!")
+        else:
+            msg_err(f"Gửi thất bại ({'mã ' + code if code else 'không kết nối được mạng'}).")
+        pause()
 
 # ==================== ROOT / SHELL ====================
 _ROOT_MODE = "unknown"
@@ -417,13 +326,22 @@ def sh_args(args, timeout=15, merge_stderr=False):
 def is_app_running(pkg):
     if sh(f"pidof {pkg}", timeout=3):
         return True
-    return pkg in sh("ps -A", timeout=3)
+    for line in sh("ps -A", timeout=3).splitlines():
+        parts = line.split()
+        if parts and parts[-1] == pkg:
+            return True
+    return False
 
 def is_app_in_foreground(pkg):
-    dumpsys = sh("dumpsys window displays", timeout=3)
-    if not dumpsys:
-        dumpsys = sh("dumpsys activity activities", timeout=3)
-    return pkg in dumpsys and "mCurrentFocus" in dumpsys
+    """True = tab còn cửa sổ đang mở, False = tab đã mất cửa sổ / thoát ra màn hình chính.
+    Không đọc được dumpsys (vd máy không root) thì coi như ổn, tránh rejoin nhầm liên tục."""
+    markers = ("mCurrentFocus", "mFocusedApp", "mResumedActivity", "topResumedActivity")
+    dump = sh("dumpsys window displays", timeout=5)
+    if not any(m in dump for m in markers):
+        dump = sh("dumpsys activity activities", timeout=5)
+    if not any(m in dump for m in markers):
+        return True
+    return pkg in dump
 
 def close_game(pkg):
     """Tắt hẳn tab: force-stop + kill, nếu tiến trình còn sống thì kill -9."""
@@ -443,51 +361,47 @@ def build_deep_link():
         return TARGET_LINK
     return f"roblox://placeId={TARGET_LINK}"
 
-def launch_commands(pkg):
+def launch_commands(pkg, enter_map=True, soft=False):
     """Các cách mở game, ưu tiên cách đầu; lỗi thì dùng cách dự phòng.
-    --activity-clear-task: xóa task cũ của app, tab mới thay thế hẳn tab cũ trong Đa nhiệm."""
-    deep_link = build_deep_link()
+    enter_map=False: chỉ mở app, không vào map.
+    soft=True: tab đang chạy -> giữ nguyên task (không tắt Đa nhiệm), chỉ đưa lên và gửi lệnh vào map.
+    soft=False: --activity-clear-task để tab mới thay thế hẳn tab cũ trong Đa nhiệm."""
+    clear = [] if soft else ["--activity-clear-task"]
+    deep_link = build_deep_link() if enter_map else None
     if deep_link:
         base = ["am", "start", "-a", "android.intent.action.VIEW", "-d", deep_link]
-        return [base + ["--activity-clear-task", pkg], base + [pkg]]
-    main = ["am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"]
-    return [main + ["--activity-clear-task", pkg],
-            ["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"]]
+    else:
+        base = ["am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"]
+    cmds = [base + clear + [pkg]]
+    if clear:
+        cmds.append(base + [pkg])
+    if not deep_link:
+        cmds.append(["monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"])
+    return cmds
 
-def open_game(pkg, close_first=True):
-    if close_first:
+def mark_launched(pkg):
+    """Mốc mới cho tab: log/logcat cũ trước thời điểm này sẽ bị bỏ qua, không bị bắt lại lỗi cũ."""
+    path = get_latest_log_file(pkg)
+    LOG_STATE[pkg] = (path, get_file_size(path) if path else 0)
+    LOGCAT_BASELINE[pkg] = time.time()
+
+def open_game(pkg, hard=False, enter_map=True):
+    """hard=True : tắt hẳn tab (tắt Đa nhiệm) rồi mở mới.
+    hard=False: tab đã mở sẵn thì GIỮ NGUYÊN (không tắt Đa nhiệm), chỉ đưa lên và vào map; tab chưa mở thì mở mới.
+    enter_map=False: chỉ mở app, không vào map."""
+    running = is_app_running(pkg)
+    if hard and running:
         close_game(pkg)
         time.sleep(1)
-    snapshot_log_baseline(pkg)  # log cũ trước thời điểm này sẽ bị bỏ qua
-    for cmd in launch_commands(pkg):
+        running = is_app_running(pkg)
+        if running:
+            print(f"\033[1;31m[!] Không tắt được {pkg} (máy không root nên không force-stop được?). Vẫn thử mở lại...\033[0m")
+    mark_launched(pkg)
+    soft = running and not hard
+    for cmd in launch_commands(pkg, enter_map=enter_map, soft=soft):
         out = sh_args(cmd, merge_stderr=True).lower()
         if not any(w in out for w in ("error", "exception", "unable to resolve", "unknown option")):
             return True
-    return False
-
-def open_game_until_success(pkg, close_first=True):
-    """Mở game + vào map. Không thấy app lên tiến trình thì thử lại tối đa LAUNCH_MAX_RETRY lần."""
-    for attempt in range(1, LAUNCH_MAX_RETRY + 1):
-        if stop_start:
-            return False
-        print(f"\033[1;33m[*] Mở {pkg} và tải Map (lần {attempt}/{LAUNCH_MAX_RETRY})...\033[0m")
-        open_game(pkg, close_first=(close_first or attempt > 1))
-
-        started = False
-        for _ in range(max(1, LAUNCH_VERIFY_SECONDS // 2)):
-            if wait_with_stop_check(2):
-                return False
-            if is_app_running(pkg):
-                started = True
-                break
-
-        if started:
-            print(f"\033[1;33m[*] {pkg} đã bật. Chờ {MAP_LOAD_WAIT}s để Map ổn định...\033[0m")
-            wait_with_stop_check(MAP_LOAD_WAIT)
-            return True
-        print(f"\033[1;31m[!] {pkg} chưa lên sau {LAUNCH_VERIFY_SECONDS}s, thử mở lại...\033[0m")
-
-    print(f"\033[1;31m[!] Không mở được {pkg} sau {LAUNCH_MAX_RETRY} lần.\033[0m")
     return False
 
 # ==================== PHÁT HIỆN KICK / VĂNG / CRASH ====================
@@ -538,12 +452,8 @@ def get_file_size(path):
     except Exception:
         return 0
 
-def snapshot_log_baseline(pkg):
-    """Ghi nhớ vị trí cuối log hiện tại: từ giờ chỉ đọc phần log MỚI, log cũ không bị bắt lại."""
-    path = get_latest_log_file(pkg)
-    LOG_STATE[pkg] = (path, get_file_size(path) if path else 0)
-
 def read_new_log_text(pkg):
+    """Phần log file MỚI của tab (cần root)."""
     path = get_latest_log_file(pkg)
     if not path:
         return ""
@@ -559,54 +469,46 @@ def read_new_log_text(pkg):
         return ""
     return sh(f"tail -c +{offset + 1} '{path}'", timeout=8)
 
-def check_logcat_problem(pkg):
-    """Đọc logcat theo PID của đúng tab này (không lẫn lỗi của các clone khác)."""
+_EPOCH_RX = re.compile(r"^\s*(\d{9,11}\.\d+)")
+
+def read_new_logcat_text(pkg):
+    """Logcat MỚI của đúng tab này (theo PID, không lẫn các clone khác).
+    Lọc theo mốc thời gian nên tab vào lại mà không tắt (cùng PID) cũng không bị bắt lại lỗi cũ."""
     pids = sh(f"pidof {pkg}", timeout=3).split()
     if not pids:
-        return False, None
-    out = sh(f"logcat -d --pid={pids[0]} -t 500", timeout=6)
-    return scan_text_for_problem(out, check_crash=True)
+        return ""
+    out = sh(f"logcat -d -v epoch --pid={pids[0]} -t 500", timeout=6)
+    base = LOGCAT_BASELINE.get(pkg, time.time())
+    newest = base
+    fresh = []
+    for line in out.splitlines():
+        m = _EPOCH_RX.match(line)
+        if not m:
+            continue
+        ts = float(m.group(1))
+        if ts > base:
+            fresh.append(line)
+            newest = max(newest, ts)
+    LOGCAT_BASELINE[pkg] = newest
+    return "\n".join(fresh)
 
 def check_package_error(pkg):
     found, reason = scan_text_for_problem(read_new_log_text(pkg))
     if found:
         return True, f"{reason} (Log File)"
-    found, reason = check_logcat_problem(pkg)
+    found, reason = scan_text_for_problem(read_new_logcat_text(pkg), check_crash=True)
     if found:
         return True, f"{reason} (Logcat)"
     return False, None
 
-def detect_problem(pkg):
-    """Kiểm tra 1 tab. Trả về lý do nếu cần rejoin, không có vấn đề thì trả về None."""
+def quick_problem(pkg):
+    """Kiểm tra nhanh sau khi vào map. Trả về lý do nếu chưa ổn, None nếu ổn."""
     if not is_app_running(pkg):
-        return "Tab bị tắt Đa nhiệm / Game crash (không còn tiến trình)"
-
+        return "Game bị tắt / crash (không còn tiến trình)"
     if not is_app_in_foreground(pkg):
-        print(f"\033[1;33m[-] {pkg} bị thoát ra Màn hình chính/Lobby. Đang đếm ngược 5s...\033[0m")
-        if wait_with_stop_check(5):
-            return None
-        if not is_app_running(pkg):
-            return "Tab bị tắt Đa nhiệm / Game crash (không còn tiến trình)"
-        if not is_app_in_foreground(pkg):
-            return "Bị thoát ra Màn hình chính / Lobby"
-        return None
-
+        return "Không thấy cửa sổ game"
     has_error, reason = check_package_error(pkg)
     return reason if has_error else None
-
-def notify_async(message):
-    """Gửi cảnh báo Discord ở luồng riêng để không làm chậm việc rejoin."""
-    if WEBHOOK_URL:
-        threading.Thread(target=send_detailed_alert, args=(message,), daemon=True).start()
-
-def recover_tab(pkg, reason):
-    """Bị kick/văng/crash: tắt tab (force-stop, xóa task Đa nhiệm) → mở lại game → vào Map."""
-    print(f"\033[1;31m[-] Phát hiện {pkg} lỗi [{reason}]! Tắt tab Đa nhiệm rồi vào lại Map...\033[0m")
-    notify_async(f"Phát hiện lỗi trên {pkg}: [{reason}]. Đã tắt tab Đa nhiệm, đang vào lại game/Map.")
-    close_game(pkg)
-    if wait_with_stop_check(2):
-        return
-    open_game_until_success(pkg, close_first=False)
 
 # ==================== VÒNG LẶP CHÍNH ====================
 def listen_for_stop():
@@ -629,8 +531,61 @@ def wait_with_stop_check(seconds, message=""):
         time.sleep(1)
     return False
 
-def launch_all(packages):
-    """Mở lần lượt các tab (>=4 tab: nhóm 3 tab, cách nhau 15s)."""
+def retry_countdown(pkg, why):
+    """Tab không vào lại được game: đếm ngược RETRY_COUNTDOWN_SECONDS giây. Hết giờ thì caller tắt Đa nhiệm (force-stop) và vào lại.
+    Trả về True nếu bị ngắt giữa chừng (bấm dừng Start)."""
+    print(f"\033[1;33m[-] {pkg}: {why}. Sau {RETRY_COUNTDOWN_SECONDS}s sẽ tắt Đa nhiệm và vào lại...\033[0m")
+    print("\033[1;33m    Đếm ngược: ", end="", flush=True)
+    for sec in range(RETRY_COUNTDOWN_SECONDS, 0, -1):
+        print(f"{sec}..", end=" ", flush=True)
+        if wait_with_stop_check(1):
+            print("\033[0m")
+            return True
+    print("\033[0m")
+    return False
+
+def join_map(pkg, hard=False):
+    """Vào Map tối đa LAUNCH_MAX_RETRY lần.
+    Mỗi lần: mở / gửi lệnh vào map -> chờ app lên -> chờ map load -> kiểm tra lại.
+    Tab không vào được game: đếm ngược 5s -> tắt hẳn tab (tắt Đa nhiệm) -> mở lại vào map.
+    Lần 1: tab đã mở sẵn thì chỉ vào map, không tắt Đa nhiệm (trừ khi hard=True). Từ lần 2 trở đi luôn tắt hẳn rồi mở lại."""
+    for attempt in range(1, LAUNCH_MAX_RETRY + 1):
+        if stop_start:
+            return False
+        print(f"\033[1;33m[*] Vào Map {pkg} (lần {attempt}/{LAUNCH_MAX_RETRY})...\033[0m")
+        open_game(pkg, hard=(hard or attempt > 1))
+
+        started = False
+        for _ in range(max(1, LAUNCH_VERIFY_SECONDS // 2)):
+            if wait_with_stop_check(2):
+                return False
+            if is_app_running(pkg):
+                started = True
+                break
+        if not started:
+            print(f"\033[1;31m[!] {pkg} chưa lên sau {LAUNCH_VERIFY_SECONDS}s.\033[0m")
+            if attempt < LAUNCH_MAX_RETRY and retry_countdown(pkg, "Tab không lên được game"):
+                return False
+            continue
+
+        print(f"\033[1;33m[*] {pkg} đã bật. Chờ {MAP_LOAD_WAIT}s để Map ổn định...\033[0m")
+        if wait_with_stop_check(MAP_LOAD_WAIT):
+            return False
+        problem = quick_problem(pkg)
+        if not problem:
+            print(f"\033[1;32m[+] {pkg} đã vào Map.\033[0m")
+            return True
+        print(f"\033[1;31m[!] {pkg} chưa vào được Map [{problem}].\033[0m")
+        if attempt < LAUNCH_MAX_RETRY and retry_countdown(pkg, "Tab không vào lại được game"):
+            return False
+
+    print(f"\033[1;31m[!] Không vào được Map {pkg} sau {LAUNCH_MAX_RETRY} lần.\033[0m")
+    return False
+
+def launch_all(packages, hard=False):
+    """Vào Map lần lượt các tab (>=4 tab: nhóm 3 tab, cách nhau 15s).
+    hard=False: tab đã mở sẵn thì chỉ vào Map, không tắt Đa nhiệm (lúc bấm Start).
+    hard=True : tắt hẳn từng tab (tắt Đa nhiệm) rồi mở lại vào Map (hết chu kỳ delay rejoin)."""
     total = len(packages)
     if total >= 4:
         batch_size = 3
@@ -639,7 +594,7 @@ def launch_all(packages):
             for idx_b, pkg in enumerate(packages[i:i + batch_size]):
                 if stop_start: break
                 print(f"\033[1;36m[*] Đang khởi chạy Tab [{i + idx_b + 1}/{total}]: {pkg}\033[0m")
-                open_game_until_success(pkg)
+                join_map(pkg, hard=hard)
             if i + batch_size < total and not stop_start:
                 print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
                 if wait_with_stop_check(15): break
@@ -647,22 +602,30 @@ def launch_all(packages):
         for idx, pkg in enumerate(packages):
             if stop_start: break
             print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx + 1}/{total}]: {pkg}\033[0m")
-            open_game_until_success(pkg)
+            join_map(pkg, hard=hard)
             if idx < total - 1:
                 print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
                 if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
 
 def start_tool():
-    global stop_start, START_UP_TIME
+    global stop_start
     stop_start = False
     clear_screen()
     print_ascii_banner()
     packages = get_all_packages()
-    START_UP_TIME = datetime.now()
     LOG_STATE.clear()
+    LOGCAT_BASELINE.clear()
 
-    print(f"\033[1;37m[+] PAIN TOOL REJOIN VIP ({VERSION}) Đang chạy...\033[0m")
-    print(f"\033[1;32m[*] Đã tìm thấy {len(packages)} bản clone ({PACKAGE_PREFIX}).\033[0m")
+    if not packages:
+        msg_err("Chưa có package nào. Vào mục [4] Package name > Add package name để thêm (tối đa 5).")
+        pause()
+        return
+
+    print(f"\033[1;37m[+] PAIN TOOL REJOIN FREE ({VERSION}) Đang chạy...\033[0m")
+    msg_ok(f"Đã khởi động Start với {len(packages)}/{MAX_PACKAGES} package: {', '.join(packages)}")
+    print(f"\033[1;32m[*] Delay Rejoin: mỗi {DELAY_REJOIN_MINUTES} phút tự thoát game, tắt Đa nhiệm rồi vào lại Map.\033[0m")
+    if not TARGET_LINK:
+        print("\033[1;31m[!] Chưa chọn game (mục [3] Chọn game): tool chỉ mở app, không vào Map.\033[0m")
     if len(packages) >= 4:
         print(f"\033[1;33m[*] Số lượng tab >= 4, áp dụng mở nhóm 3 tab, cách nhau 15 giây.\033[0m")
     else:
@@ -674,58 +637,29 @@ def start_tool():
     listener.start()
 
     launch_all(packages)
-
-    if not stop_start:
-        send_webhook(f"Bắt đầu theo dõi {len(packages)} tab clone.", with_image=True)
-
     start_time = time.time()
-    last_webhook_time = time.time()
-    last_cleanup_time = time.time()
 
     try:
         while not stop_start:
-            current_time = time.time()
-            elapsed_minutes = (current_time - start_time) / 60.0
-            packages = get_all_packages()
-
-            if (current_time - last_cleanup_time) >= 600:
-                print("\033[1;32m[*] Tiến hành tự động dọn dẹp RAM và cache định kỳ...\033[0m")
-                for pkg in packages:
-                    run_cmd(["su", "-c", f"rm -rf /data/data/{pkg}/cache/*"])
-                run_cmd(["su", "-c", "sync && echo 3 > /proc/sys/vm/drop_caches"])
-                last_cleanup_time = time.time()
-
-            if AUTO_REJOIN_MODE == 1:
-                for pkg in packages:
-                    if stop_start: break
-                    reason = detect_problem(pkg)
-                    if reason:
-                        recover_tab(pkg, reason)
-
-            elif AUTO_REJOIN_MODE == 2:
-                if elapsed_minutes >= DELAY_REJOIN_MINUTES:
-                    print(f"\033[1;33m[*] Chu kỳ {DELAY_REJOIN_MINUTES}p hoàn tất. Restart toàn bộ tab...\033[0m")
-                    for pkg in packages:
-                        close_game(pkg)
-                    time.sleep(3)
-                    launch_all(packages)
-                    start_time = time.time()
-
-            if (time.time() - last_webhook_time) >= 300:
-                print("\033[1;32m[*] Đã đủ 5 phút, đang gửi báo cáo ảnh chụp màn hình định kỳ (Im lặng, không ping)...\033[0m")
-                send_webhook("Cập nhật trạng thái định kỳ (5 phút)", with_image=True)
-                last_webhook_time = time.time()
+            elapsed_minutes = (time.time() - start_time) / 60.0
+            if elapsed_minutes >= DELAY_REJOIN_MINUTES:
+                packages = get_all_packages()
+                print(f"\033[1;33m[*] Chu kỳ {DELAY_REJOIN_MINUTES}p hoàn tất. Tắt Đa nhiệm và vào lại Map toàn bộ tab...\033[0m")
+                launch_all(packages, hard=True)
+                start_time = time.time()   # tính chu kỳ mới từ lúc vào lại xong
 
             if wait_with_stop_check(2): break
 
         if stop_start:
-            print("\n\033[1;31m[!] Đã dừng Start. Quay lại menu...\033[0m")
+            print()
+            msg_ok("Đã dừng Start thành công. Đang quay lại menu chính...")
             time.sleep(1.5)
             return
 
     except KeyboardInterrupt:
-        print("\n\033[1;31m[!] Đã dừng Start.\033[0m")
-        time.sleep(1)
+        print()
+        msg_ok("Đã dừng Start thành công (Ctrl+C). Đang quay lại menu chính...")
+        time.sleep(1.5)
         return
 
 
@@ -734,10 +668,10 @@ def show_banner():
     print_ascii_banner()
     
     sys_info = get_system_info()
-    rejoin_mode_str = "Auto rejoin vang/kicked" if AUTO_REJOIN_MODE == 1 else f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
+    rejoin_mode_str = f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
     
     print("\033[1;32m--------------------------------------------------\033[0m")
-    print("\033[1;37m             PAIN TOOL REJOIN VIP                \033[0m")
+    print("\033[1;37m             PAIN TOOL REJOIN FREE               \033[0m")
     print("\033[1;32m--------------------------------------------------\033[0m")
     print(" \033[1;33mMADE BY       :\033[0m \033[1;37mPAIN GAMER\033[0m")
     print(f" \033[1;33mDISCORD       :\033[0m \033[1;36m{DISCORD_LINK}\033[0m")
@@ -749,208 +683,227 @@ def show_banner():
     print(f" \033[1;37m• Tổng RAM    :\033[0m {sys_info['ram']}")
     print(f" \033[1;37m• Dung lượng  :\033[0m {sys_info['battery']}")
     print("\033[1;32m--------------------------------------------------\033[0m")
-    print(f"\033[1;32m Package Prefix  :\033[0m \033[1;37m{PACKAGE_PREFIX}\033[0m")
+    pkg_txt = ", ".join(PACKAGE_NAMES) or "Chưa thêm"
+    if len(pkg_txt) > 26:
+        pkg_txt = pkg_txt[:25] + "…"
+    print(f"\033[1;32m Package Name    :\033[0m \033[1;37m{len(PACKAGE_NAMES)}/{MAX_PACKAGES} · {pkg_txt}\033[0m")
     print(f"\033[1;32m Chế độ Game     :\033[0m \033[1;37m{SELECTED_GAME_NAME}\033[0m")
     print(f"\033[1;32m Cơ chế Rejoin   :\033[0m \033[1;37m{rejoin_mode_str}\033[0m")
-    print(f"\033[1;32m Webhook URL     :\033[0m \033[1;37m{'Đã cài đặt' if WEBHOOK_URL else 'Chưa cài'}\033[0m")
     print("\033[1;32m==================================================\033[0m")
     print("\033[1;32m[1]\033[0m \033[1;37mStart\033[0m")
-    print("\033[1;32m[2]\033[0m \033[1;37mSet up\033[0m")
-    print("\033[1;32m[3]\033[0m \033[1;37mPackage prefix\033[0m")
-    print("\033[1;32m[4]\033[0m \033[1;37mChange id\033[0m")
-    print("\033[1;32m[5]\033[0m \033[1;37mSet Webhook URL\033[0m")
-    print("\033[1;32m[6]\033[0m \033[1;37mXóa cache\033[0m")
-    print("\033[1;32m[7]\033[0m \033[1;37mImport auto execute\033[0m")
-    print("\033[1;32m[8]\033[0m \033[1;37mMở tab clone\033[0m")
-    print("\033[1;32m[9]\033[0m \033[1;37mSEND TEXT\033[0m")
+    print("\033[1;32m[2]\033[0m \033[1;37mSet up delay rejoin\033[0m")
+    print("\033[1;32m[3]\033[0m \033[1;37mChọn game\033[0m")
+    print("\033[1;32m[4]\033[0m \033[1;37mPackage name\033[0m")
+    print("\033[1;32m[5]\033[0m \033[1;37mXóa cache\033[0m")
+    print("\033[1;32m[6]\033[0m \033[1;37mImport auto execute\033[0m")
+    print("\033[1;32m[7]\033[0m \033[1;37mMở tab clone\033[0m")
+    print("\033[1;32m[8]\033[0m \033[1;37mSEND TEXT\033[0m")
     print("\033[1;31m[0] Exit\033[0m")
     print("\033[1;32m==================================================\033[0m")
 
+GAMES = {
+    "1": ("Blox Fruit", "2753915549"),
+    "2": ("Grow a Garden", "126884695634066"),
+    "3": ("Grow a Garden 2", "97598239454123"),
+    "4": ("Blade Ball", "13772394625"),
+    "5": ("King Legacy", "4520749081"),
+    "6": ("Fisch", "16732694052"),
+    "7": ("Pet Simulator 99", "8737899170"),
+    "8": ("Anime Vanguards", "16146832113"),
+    "9": ("99 Nights in the Forest", "79546208627805"),
+    "10": ("Steal a Brainrot", "109983668079237"),
+    "11": ("Steal An Egg", "107778070777162"),
+}
+
+def setup_delay_rejoin():
+    global DELAY_REJOIN_MINUTES
+    clear_screen()
+    print(f"{GREEN}=== SET UP DELAY REJOIN ==={RESET}")
+    print(f"{WHITE}Chu kỳ hiện tại: {DELAY_REJOIN_MINUTES} phút{RESET}")
+    print("Hết mỗi chu kỳ tool tự thoát app game, tắt Đa nhiệm rồi vào lại Map.")
+    print("Tab nào không vào lại được game sẽ đếm ngược 5 giây, tắt Đa nhiệm và vào lại.")
+    mins = input("Nhập thời gian chu kỳ (phút, Enter để giữ nguyên): ").strip()
+    if not mins:
+        msg_info(f"Giữ nguyên chu kỳ hiện tại: {DELAY_REJOIN_MINUTES} phút.")
+        time.sleep(1.5)
+    elif mins.isdigit() and int(mins) > 0:
+        DELAY_REJOIN_MINUTES = int(mins)
+        msg_ok(f"Đã cập nhật Delay Rejoin thành công: {DELAY_REJOIN_MINUTES} phút!")
+        pause()
+    else:
+        msg_err("Chu kỳ phải là số nguyên lớn hơn 0. Chưa có thay đổi nào được áp dụng.")
+        pause()
+
+def choose_game():
+    global TARGET_LINK, SELECTED_GAME_NAME
+    clear_screen()
+    print(f"{GREEN}=== CHỌN GAME ==={RESET}")
+    for key, (name, _pid) in GAMES.items():
+        print(f"{WHITE}{key}. {name}{RESET}")
+    print(f"{WHITE}12. Custom ID / Private Link{RESET}")
+    game_choice = input("Chọn game [1-12]: ").strip()
+    if game_choice in GAMES:
+        SELECTED_GAME_NAME, TARGET_LINK = GAMES[game_choice]
+        msg_ok(f"Đã chọn game thành công: {SELECTED_GAME_NAME} (ID: {TARGET_LINK})")
+        pause()
+    elif game_choice == "12":
+        link = input("Nhập ID game hoặc Link Server VIP: ").strip()
+        if link:
+            TARGET_LINK = link
+            SELECTED_GAME_NAME = f"Game ID: {link}" if link.isdigit() else "Server VIP Custom"
+            msg_ok(f"Đã nhận link/ID thành công! Chế độ hiện tại: {SELECTED_GAME_NAME}")
+            pause()
+        else:
+            msg_warn("Chưa nhập link/ID nên không có thay đổi nào được áp dụng.")
+            time.sleep(1.5)
+    else:
+        msg_err("Lựa chọn không hợp lệ, vui lòng chọn từ 1 đến 12.")
+        time.sleep(1.5)
+
+def clear_cache_action():
+    clear_screen()
+    packages = get_all_packages()
+    if not packages:
+        msg_err("Chưa có package nào. Vào mục [4] Package name để thêm.")
+        pause()
+        return
+    if not root_mode():
+        msg_err("Máy không có root nên không xóa được cache của app.")
+        pause()
+        return
+    msg_info(f"Đang xóa cache của {len(packages)} package, vui lòng chờ...")
+    # Chỉ xóa cache (KHÔNG pm clear) nên không mất đăng nhập
+    for pkg in packages:
+        sh(f"rm -rf /data/data/{pkg}/cache/* /data/data/{pkg}/code_cache/*")
+        msg_ok(f"Đã xóa cache: {pkg}")
+    sh("sync && echo 3 > /proc/sys/vm/drop_caches")
+    msg_ok("Đã xóa cache và dọn RAM thành công (không xóa dữ liệu đăng nhập)!")
+    pause()
+
+def import_autoexec():
+    clear_screen()
+    script_data = input("Nhập script hack (Để trống để thoát): ").strip()
+    if not script_data:
+        msg_warn("Đã hủy import auto execute (chưa nhập script).")
+        time.sleep(1.2)
+        return
+    msg_info("Đang lưu script vào các thư mục Autoexec...")
+    temp_path = "/sdcard/temp_autoexec.lua"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(script_data)
+    except Exception as e:
+        msg_err(f"Không ghi được file tạm {temp_path}: {e}")
+        pause()
+        return
+    executor_names = ["Delta", "Codex", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
+    target_dirs = set()
+    for name in executor_names:
+        base_dir = f"/sdcard/{name}"
+        target_dirs.add(f"{base_dir}/Autoexec")
+    packages = get_all_packages()
+    for pkg in packages:
+        target_dirs.add(f"/sdcard/Android/data/{pkg}/files/autoexec")
+    for target in target_dirs:
+        run_cmd(["mkdir", "-p", target])
+        run_cmd(["cp", temp_path, f"{target}/script.lua"])
+    try:
+        os.remove(temp_path)
+    except:
+        pass
+    msg_ok(f"Đã lưu script Autoexec thành công vào {len(target_dirs)} thư mục!")
+    pause()
+
+def open_clone_tabs():
+    clear_screen()
+    found_pkgs = get_all_packages()
+    if not found_pkgs:
+        msg_err("Chưa có package nào. Vào mục [4] Package name để thêm.")
+        pause()
+        return
+    msg_info("Đang mở hàng loạt tab (chỉ mở app, không vào Map)... (Ấn Ctrl+C để dừng)")
+    opened = 0
+    total_clones = len(found_pkgs)
+
+    def _open_one(pkg, label):
+        nonlocal opened
+        msg_info(f"Đang mở tab {label}: {pkg}")
+        # enter_map=False: chỉ mở app, không gửi lệnh vào Map
+        if open_game(pkg, hard=True, enter_map=False):
+            opened += 1
+            msg_ok(f"Đã mở tab {label}: {pkg}")
+        else:
+            msg_err(f"Không mở được tab {label}: {pkg}")
+
+    try:
+        if total_clones >= 4:
+            batch_size = 3
+            for i in range(0, total_clones, batch_size):
+                batch = found_pkgs[i:i + batch_size]
+                for idx_b, pkg in enumerate(batch):
+                    _open_one(pkg, f"[{i + idx_b + 1}/{total_clones}]")
+                if i + batch_size < total_clones:
+                    msg_warn("Chờ 15 giây để mở nhóm tiếp theo...")
+                    time.sleep(15)
+        else:
+            for idx, pkg in enumerate(found_pkgs):
+                _open_one(pkg, f"[{idx + 1}/{total_clones}]")
+                if idx < total_clones - 1:
+                    msg_warn(f"Chờ {CLONE_LAUNCH_DELAY}s trước khi mở tab tiếp theo...")
+                    time.sleep(CLONE_LAUNCH_DELAY)
+    except KeyboardInterrupt:
+        print()
+        msg_warn(f"Đã dừng giữa chừng bằng Ctrl+C ({opened}/{total_clones} tab đã mở).")
+        pause()
+        return
+
+    if opened == total_clones:
+        msg_ok(f"Hoàn tất mở tất cả tab clone thành công ({opened}/{total_clones})!")
+    elif opened > 0:
+        msg_warn(f"Chỉ mở được {opened}/{total_clones} tab, các tab còn lại thất bại.")
+    else:
+        msg_err(f"Không mở được tab clone nào (0/{total_clones}).")
+    pause()
+
+def exit_tool():
+    print(f"\n{GREEN}[✓] Đã thoát tool thành công. Tạm biệt!{RESET}")
+    time.sleep(1)
+    sys.exit(0)
+
 if __name__ == "__main__":
     load_saved_config()
-    authenticate()
-    while True:
-        show_banner()
-        choice = input("Chọn chức năng [0-9]: ").strip()
-        if choice == "1":
-            start_tool()
-        elif choice == "2":
-            while True:
-                clear_screen()
-                print("\033[1;32m=== SET UP ===\033[0m")
-                print("\033[1;37m1. Set up auto rejoin\033[0m")
-                print("\033[1;37m2. Chọn game\033[0m")
-                print("\033[1;32m0. Quay lại menu chính\033[0m")
-                sub = input("Chọn: ").strip()
-                if sub == "1":
-                    clear_screen()
-                    print("\033[1;32m=== SET UP AUTO REJOIN ===\033[0m")
-                    print("\033[1;37m1. Auto rejoin vang/kicked\033[0m")
-                    print("\033[1;37m2. Delay rejoin (Đóng & mở lại theo chu kỳ)\033[0m")
-                    mode = input("Chọn cơ chế [1/2]: ").strip()
-                    if mode == "1":
-                        AUTO_REJOIN_MODE = 1
-                        print("\033[1;32m[+] Đã chọn Auto rejoin vang/kicked!\033[0m")
-                    elif mode == "2":
-                        AUTO_REJOIN_MODE = 2
-                        mins = input("Nhập thời gian chu kỳ (phút): ").strip()
-                        if mins.isdigit() and int(mins) > 0:
-                            DELAY_REJOIN_MINUTES = int(mins)
-                            print(f"\033[1;32m[+] Đã cài Delay Rejoin {DELAY_REJOIN_MINUTES} phút!\033[0m")
-                    time.sleep(1.5)
-                elif sub == "2":
-                    clear_screen()
-                    print("\033[1;32m=== CHỌN GAME ===\033[0m")
-                    print("\033[1;37m1. Blox Fruit\033[0m")
-                    print("\033[1;37m2. Grow a Garden\033[0m")
-                    print("\033[1;37m3. Grow a Garden 2\033[0m")
-                    print("\033[1;37m4. Blade Ball\033[0m")
-                    print("\033[1;37m5. King Legacy\033[0m")
-                    print("\033[1;37m6. Fisch\033[0m")
-                    print("\033[1;37m7. Pet Simulator 99\033[0m")
-                    print("\033[1;37m8. Anime Vanguards\033[0m")
-                    print("\033[1;37m9. 99 Nights in the Forest\033[0m")
-                    print("\033[1;37m10. Steal a Brainrot\033[0m")
-                    print("\033[1;37m11. Steal An Egg\033[0m")
-                    print("\033[1;37m12. Custom ID / Private Link\033[0m")
-                    game_choice = input("Chọn game [1-12]: ").strip()
-                    if game_choice == "1":
-                        TARGET_LINK = "2753915549"
-                        SELECTED_GAME_NAME = "Blox Fruit"
-                    elif game_choice == "2":
-                        TARGET_LINK = "126884695634066"
-                        SELECTED_GAME_NAME = "Grow a Garden"
-                    elif game_choice == "3":
-                        TARGET_LINK = "97598239454123"
-                        SELECTED_GAME_NAME = "Grow a Garden 2"
-                    elif game_choice == "4":
-                        TARGET_LINK = "13772394625"
-                        SELECTED_GAME_NAME = "Blade Ball"
-                    elif game_choice == "5":
-                        TARGET_LINK = "4520749081"
-                        SELECTED_GAME_NAME = "King Legacy"
-                    elif game_choice == "6":
-                        TARGET_LINK = "16732694052"
-                        SELECTED_GAME_NAME = "Fisch"
-                    elif game_choice == "7":
-                        TARGET_LINK = "8737899170"
-                        SELECTED_GAME_NAME = "Pet Simulator 99"
-                    elif game_choice == "8":
-                        TARGET_LINK = "16146832113"
-                        SELECTED_GAME_NAME = "Anime Vanguards"
-                    elif game_choice == "9":
-                        TARGET_LINK = "79546208627805"
-                        SELECTED_GAME_NAME = "99 Nights in the Forest"
-                    elif game_choice == "10":
-                        TARGET_LINK = "109983668079237"
-                        SELECTED_GAME_NAME = "Steal a Brainrot"
-                    elif game_choice == "11":
-                        TARGET_LINK = "107778070777162"
-                        SELECTED_GAME_NAME = "Steal An Egg"
-                    elif game_choice == "12":
-                        link = input("Nhập ID game hoặc Link Server VIP: ").strip()
-                        if link:
-                            TARGET_LINK = link
-                            SELECTED_GAME_NAME = f"Game ID: {link}" if link.isdigit() else "Server VIP Custom"
-                            print("\033[1;32m[+] Đã nhận link/ID!\033[0m")
-                            time.sleep(1.5)
-                    time.sleep(1)
-                elif sub == "0":
-                    break
-        elif choice == "3":
-            clear_screen()
-            pref = input("Nhập Package Prefix (Để trống để giữ mặc định): ").strip()
-            if pref:
-                PACKAGE_PREFIX = pref
-        elif choice == "4":
-            clear_screen()
-            new_id = input("Nhập ID mới (Để trống để tạo ngẫu nhiên): ").strip()
-            if not new_id:
-                new_id = "".join(random.choices(string.hexdigits.lower(), k=16))
-            run_cmd(["su", "-c", f"settings put secure android_id {new_id}"])
-            print(f"\033[1;32m[+] Đã yêu cầu đổi ID thành: {new_id}\033[0m")
-            time.sleep(2)
-        elif choice == "5":
-            clear_screen()
-            print("\033[1;32m=== SET WEBHOOK URL ===\033[0m")
-            if WEBHOOK_URL:
-                print(f"Webhook hiện tại: {WEBHOOK_URL[:35]}...")
-            new_webhook = input("Nhập URL Discord Webhook (Để trống để xóa Webhook): ").strip()
-            WEBHOOK_URL = new_webhook
-            if WEBHOOK_URL:
-                while True:
-                    uid_input = input("Nhập Discord UID để nhận ping thông báo: ").strip()
-                    if uid_input:
-                        DISCORD_UID = uid_input
-                        break
-                    else:
-                        print("\033[1;31m[!] Bắt buộc phải nhập Discord UID để tiếp tục!\033[0m")
-                save_config_file()
-                print("\033[1;32m[+] Đã cập nhật Webhook và Discord UID thành công!\033[0m")
+    try:
+        while True:
+            show_banner()
+            choice = input("Chọn chức năng [0-8]: ").strip()
+            if choice == "1":
+                ack_choice("[1] Start")
+                start_tool()
+            elif choice == "2":
+                ack_choice("[2] Set up delay rejoin")
+                setup_delay_rejoin()
+            elif choice == "3":
+                ack_choice("[3] Chọn game")
+                choose_game()
+            elif choice == "4":
+                ack_choice("[4] Package name")
+                package_name_menu()
+            elif choice == "5":
+                ack_choice("[5] Xóa cache")
+                clear_cache_action()
+            elif choice == "6":
+                ack_choice("[6] Import auto execute")
+                import_autoexec()
+            elif choice == "7":
+                ack_choice("[7] Mở tab clone")
+                open_clone_tabs()
+            elif choice == "8":
+                ack_choice("[8] SEND TEXT")
+                handle_send_text()
+            elif choice == "0":
+                exit_tool()
             else:
-                DISCORD_UID = ""
-                save_config_file()
-                print("\033[1;33m[-] Đã xóa Webhook.\033[0m")
-            time.sleep(2)
-        elif choice == "6":
-            clear_screen()
-            packages = get_all_packages()
-            for pkg in packages:
-                run_cmd(["su", "-c", f"rm -rf /data/data/{pkg}/cache/*"])
-                run_cmd(["su", "-c", f"pm clear {pkg}"])
-            run_cmd(["su", "-c", "sync && echo 3 > /proc/sys/vm/drop_caches"])
-            print("\033[1;32m[+] Hoàn tất dọn dẹp cache và RAM định kỳ!\033[0m")
-            time.sleep(2)
-        elif choice == "7":
-            clear_screen()
-            script_data = input("Nhập script hack (Để trống để thoát): ").strip()
-            if not script_data:
-                continue
-            temp_path = "/sdcard/temp_autoexec.lua"
-            with open(temp_path, "w", encoding="utf-8") as f:
-                f.write(script_data)
-            executor_names = ["Delta", "Codex", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
-            target_dirs = set()
-            for name in executor_names:
-                base_dir = f"/sdcard/{name}"
-                target_dirs.add(f"{base_dir}/Autoexec")
-            packages = get_all_packages()
-            for pkg in packages:
-                target_dirs.add(f"/sdcard/Android/data/{pkg}/files/autoexec")
-            for target in target_dirs:
-                run_cmd(["mkdir", "-p", target])
-                run_cmd(["cp", temp_path, f"{target}/script.lua"])
-            try:
-                os.remove(temp_path)
-            except:
-                pass
-            print("\033[1;32m[+] Đã lưu script Autoexec!\033[0m")
-            time.sleep(2)
-        elif choice == "8":
-            clear_screen()
-            found_pkgs = get_all_packages()
-            print(f"\033[1;32m[*] Đang mở hàng loạt tab...\033[0m")
-            if len(found_pkgs) >= 4:
-                batch_size = 3
-                total_clones = len(found_pkgs)
-                for i in range(0, total_clones, batch_size):
-                    batch = found_pkgs[i:i + batch_size]
-                    for idx_b, pkg in enumerate(batch):
-                        global_idx = i + idx_b + 1
-                        open_game(pkg)
-                        print(f"\033[1;32m[+] Đã mở package [{global_idx}/{total_clones}]: {pkg}\033[0m")
-                    if i + batch_size < total_clones:
-                        print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
-                        time.sleep(15)
-            else:
-                for idx, pkg in enumerate(found_pkgs):
-                    open_game(pkg)
-                    print(f"\033[1;32m[+] Đã mở package: {pkg}\033[0m")
-                    if idx < len(found_pkgs) - 1:
-                        time.sleep(CLONE_LAUNCH_DELAY)
-            print("\033[1;32m[+] Hoàn tất mở các tab clone!\033[0m")
-            time.sleep(2)
-        elif choice == "9":
-            handle_send_text()
-        elif choice == "0":
-            sys.exit(0)
+                msg_err(f"Lựa chọn '{choice}' không hợp lệ. Vui lòng nhập số từ 0 đến 8.")
+                time.sleep(1.5)
+    except KeyboardInterrupt:
+        exit_tool()
