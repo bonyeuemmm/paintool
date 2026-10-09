@@ -1,0 +1,28 @@
+# Environment variables - NEVER commit to GitHub
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.device_hwid
+.pain_config.json
+.device_screen_state
