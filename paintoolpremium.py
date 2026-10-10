@@ -1,4 +1,828 @@
-meout=12)
+import os
+import sys
+import time
+import subprocess
+import json
+import random
+import string
+import threading
+import hmac
+import hashlib
+import re
+import shlex
+import shutil
+import getpass
+import unicodedata
+import signal
+import traceback
+import select
+import struct
+import uuid
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone, timedelta
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # If python-dotenv not installed, manually load .env file
+    if os.path.exists('.env'):
+        with open('.env', 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, val = line.split('=', 1)
+                    os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
+VERSION = "v1.6.6 Beta"
+
+# ==================== GLOBAL CONSTANTS (SERVER_URL / SECRET_KEY) ====================
+SERVER_URL = "https://paintool-bot.onrender.com/api/verify"
+SECRET_KEY = "PainGamerSecretKey2156#VipTool"
+API_URL = SERVER_URL   # alias cũ giữ tương thích
+
+# Online mode flag (không còn bắt buộc phải có requests)
+_HAS_REQUESTS = False
+try:
+    import requests   # chỉ dùng cho những chỗ khác nếu cần; phần xác thực key dùng urllib
+    _HAS_REQUESTS = True
+except ImportError:
+    _HAS_REQUESTS = False
+
+try:
+    import cohere
+    _HAS_GROQ = True  # Keep variable name for compatibility
+except ImportError:
+    _HAS_GROQ = False
+LAST_LICENSE_EXPIRES = ""
+LAST_LICENSE_REASON = ""
+LICENSE_FILE = os.path.join(os.path.expanduser("~"), ".pain_license")
+DEVICE_FILE = os.path.join(os.path.expanduser("~"), ".pain_device")
+HEARTBEAT_SEC = 600
+CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".pain_config.json")
+LOG_FILE = os.path.join(os.path.expanduser("~"), ".pain_log.txt")
+LOG_MAX_BYTES = 1_000_000
+
+PACKAGE_PREFIX = "com.roblox"
+TARGET_LINK = ""
+SELECTED_GAME_NAME = "Chưa chọn"
+WEBHOOK_URL = ""
+DISCORD_UID = ""
+SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
+
+DISCORD_LINK = "https://discord.gg/z7RUNArBuJ"
+
+# ---- COHERE AI Configuration (loaded from environment) ----
+GROQ_API_KEY = os.environ.get("COHERE_API_KEY", "")  # Load from env var
+GROQ_ENABLED = bool(GROQ_API_KEY)  # Auto-enable if key exists
+GROQ_REQUEST_COUNT = 0
+GROQ_QUOTA_LIMIT = 8500
+_GROQ_CLIENT = None  # Now stores Cohere client
+GROQ_WEEKLY_ALERTS = []
+
+AUTO_REJOIN_MODE = 1
+DELAY_REJOIN_MINUTES = 1
+CLONE_LAUNCH_DELAY = 10
+stop_start = False
+START_UP_TIME = None
+
+# ---- Auto Clear Data / Khôi phục tab kẹt ----
+AUTO_CLEAR_DATA = True
+FREEZE_TIMEOUT_MIN = 4
+CLEAR_COOLDOWN_SEC = 600
+
+# ---- Sao lưu & khôi phục dữ liệu tab ----
+AUTO_BACKUP = True
+BACKUP_INTERVAL_MIN = 30
+BACKUP_STABLE_SECONDS = 120
+BACKUP_DIR = "/sdcard/PainBackup"
+BACKUP_EXCLUDE = ("cache", "code_cache")
+
+ROBLOX_ERROR_CODES = [str(c) for c in range(258, 291)] + ["517", "522", "523", "524", "529", "610", "769", "770", "771", "772", "773"]
+
+KICK_PHRASES = [
+    "you have been kicked", "you were kicked", "kicked from the game", "kicked from this experience",
+    "disconnected from game", "unexpected disconnection", "same account launched",
+    "lost connection to the game server", "connection attempt failed", "failed to connect to the game",
+    "you have been disconnected",
+]
+CRASH_PHRASES = ["fatal exception", "fatal signal"]
+
+VIP_EXPIRED_PHRASES = [
+    "private server is no longer available",
+    "private server is invalid",
+    "unable to join this private server",
+    "this private server is full",
+    "private server no longer exists",
+    "private server link has expired",
+    "invalid or expired private server",
+    "the private server you are trying to join no longer exists",
+]
+
+GAME_STATUS_CHECK_SEC = 120
+GAME_STATUS_RECENT_UPDATE_MIN = 3
+GAME_STATUS_PAUSED = False
+GAME_STATUS_REASON = ""
+LAST_GAME_STATUS = {}
+_UNIVERSE_ID_CACHE = {}
+
+LAUNCH_VERIFY_SECONDS = 30
+LAUNCH_MAX_RETRY = 3
+MAP_LOAD_WAIT = 15
+RETRY_COUNTDOWN_SECONDS = 5
+LOG_STATE = {}
+LOGCAT_BASELINE = {}
+LAST_ACTIVITY = {}
+LAST_CLEAR = {}
+LAST_SOFT_JOIN = {}
+JOINED_AT = {}
+LAST_BACKUP = {}
+NEEDS_LOGIN = set()
+LOG_SOURCE_WORKS = False
+
+ALERT_STYLES = {
+    "critical": {"color": 0xED4245, "icon": "🔴", "label": "LỖI NẶNG"},
+    "lobby":    {"color": 0xFEE75C, "icon": "🟡", "label": "VĂNG LOBBY"},
+    "success":  {"color": 0x57F287, "icon": "🟢", "label": "REJOIN THÀNH CÔNG"},
+    "stopped":  {"color": 0x95A5A6, "icon": "⚪", "label": "TOOL DỪNG"},
+    "aborted":  {"color": 0xE67E22, "icon": "⛔", "label": "TOOL DỪNG BẤT THƯỜNG"},
+    "warn":     {"color": 0xFEE75C, "icon": "🟡", "label": "CẢNH BÁO"},
+    "restart":  {"color": 0x3498DB, "icon": "🔄", "label": "TỰ ĐỘNG RESTART"},
+    "hop":      {"color": 0x9B59B6, "icon": "🔀", "label": "ĐỔI SERVER"},
+}
+PING_LEVELS = ("critical", "aborted")
+ALERT_COOLDOWN_SEC = 20
+_ALERT_LAST = {}
+REJOIN_COUNT = {}
+ACCOUNTS = {}
+CYCLE_START = None
+_LOG_LOCK = threading.Lock()
+
+# ==================== NHẬT KÝ FILE ====================
+def log_event(kind, pkg=None, detail="", code=None, rejoin=None):
+    try:
+        parts = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), str(kind).ljust(11), pkg or "-"]
+        if code:
+            parts.append(f"code={code}")
+        if rejoin is not None:
+            parts.append(f"rejoin#{rejoin}")
+        if detail:
+            parts.append(str(detail).replace("\n", " "))
+        line = " | ".join(parts)
+        with _LOG_LOCK:
+            try:
+                if os.path.getsize(LOG_FILE) > LOG_MAX_BYTES:
+                    with open(LOG_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                        tail = f.readlines()[-2000:]
+                    with open(LOG_FILE, "w", encoding="utf-8") as f:
+                        f.writelines(tail)
+            except OSError:
+                pass
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+    except Exception:
+        pass
+
+def fmt_duration(sec):
+    sec = int(max(0, sec))
+    h, r = divmod(sec, 3600)
+    m, sc = divmod(r, 60)
+    if h:
+        return f"{h}h{m:02d}m"
+    if m:
+        return f"{m}m{sc:02d}s"
+    return f"{sc}s"
+
+def tab_state(pkg):
+    if not is_app_running(pkg):
+        return "Đã tắt", False
+    if not is_app_in_foreground(pkg):
+        return "Lobby", None
+    if pkg in JOINED_AT:
+        return "Trong map", True
+    return "Đang vào", None
+
+def read_app_version(pkg):
+    out = sh(f"dumpsys package {shlex.quote(pkg)} 2>/dev/null | grep -m1 versionName", timeout=10)
+    m = re.search(r"versionName=(\S+)", out or "")
+    return m.group(1) if m else None
+
+def check_app_versions(packages):
+    changed = False
+    for pkg in packages:
+        v = read_app_version(pkg)
+        if not v:
+            continue
+        old = ROBLOX_VERSIONS.get(pkg)
+        if old is None:
+            ROBLOX_VERSIONS[pkg] = v
+            changed = True
+        elif old != v:
+            ROBLOX_VERSIONS[pkg] = v
+            changed = True
+            log_event("APP_UPDATE", pkg, f"Roblox {old} → {v}")
+            notify_async("warn", "Roblox đã cập nhật",
+                         f"`{pkg}`: {old} → {v}. Nếu lỗi mới xuất hiện, hãy kiểm tra sau bản cập nhật này.",
+                         pkg=pkg)
+    if changed:
+        save_config_file()
+
+def print_status_table(packages=None):
+    try:
+        packages = packages or get_all_packages()
+        w = ui_width()
+        inner = w - 4
+        now = time.time()
+        total = fmt_duration(now - START_UP_TIME.timestamp()) if START_UP_TIME else "0s"
+        if AUTO_REJOIN_MODE == 2:
+            if CYCLE_START:
+                left = DELAY_REJOIN_MINUTES * 60 - (now - CYCLE_START)
+                nxt = fmt_duration(left) if left > 0 else "đang rejoin..."
+            else:
+                nxt = "—"
+        else:
+            nxt = "không theo chu kỳ (dò lỗi liên tục)"
+        sw, rw, mw, ew = 11, 3, 7, 8
+        nw = max(8, inner - sw - rw - mw - ew - 4)
+        states = [(pkg,) + tab_state(pkg) for pkg in packages]
+        running = sum(1 for _p, _t, st in states if st is not False)
+        print(box_top(w))
+        print(box_row(f"{C.WHT}TRẠNG THÁI TAB{C.R}", w, "center"))
+        print(box_sep(w))
+        print(box_kv("Chạy tổng", f"{C.WHT}{total}{C.R}", w))
+        print(box_kv("Cơ chế", f"{C.WHT}{get_rejoin_mode_str()}{C.R}", w))
+        print(box_kv("Rejoin kế", f"{C.WHT}{nxt}{C.R}", w))
+        if RUN_LIMIT_HOURS and START_UP_TIME:
+            left_s = RUN_LIMIT_HOURS * 3600 - (now - START_UP_TIME.timestamp())
+            col_left = C.YEL if left_s < 600 else C.WHT
+            print(box_kv("Còn lại", f"{col_left}{fmt_duration(max(0, left_s))}{C.R}", w))
+        if GAME_STATUS_PAUSED:
+            print(box_kv("Game", f"{C.YEL}Tạm dừng rejoin — {clip(GAME_STATUS_REASON, inner - 24)}{C.R}", w))
+        if NEXT_AUTO_RESTART and AUTO_RESTART_HOURS:
+            rl = NEXT_AUTO_RESTART - now
+            print(box_kv("Restart kế", f"{C.WHT}{fmt_duration(rl) if rl > 0 else 'sắp tới'} ({auto_restart_label()}){C.R}", w))
+        print(box_kv("Tab chạy", f"{C.WHT}{running}/{len(packages)}{C.R}", w))
+        print(box_sep(w))
+        print(box_row(f"{C.GRY}{pad('Tab', nw)} {pad('Trạng thái', sw)} {pad('RJ', rw)} {pad('Executor', ew)} {pad('Map', mw)}{C.R}", w))
+        for pkg, text, st in states:
+            short = pkg[len(PACKAGE_PREFIX):].lstrip(".") if pkg.startswith(PACKAGE_PREFIX) and pkg != PACKAGE_PREFIX else pkg
+            if ALIASES.get(pkg):
+                short = ALIASES[pkg]
+            if ACCOUNTS.get(pkg):
+                short = f"{short} ({ACCOUNTS[pkg]})"
+            in_map = fmt_duration(now - JOINED_AT[pkg]) if pkg in JOINED_AT and st else "—"
+            exe = EXECUTOR_BINDING.get(pkg, "—")
+            exe_display = exe if exe in EXECUTOR_NAMES else "—"
+            row = (f"{pad(clip(short, nw), nw)} {pad(dot(st) + ' ' + clip(text, sw - 2), sw)} "
+                   f"{pad(str(REJOIN_COUNT.get(pkg, 0)), rw)} {pad(exe_display, ew)} {pad(in_map, mw)}")
+            print(box_row(row, w))
+        print(box_bot(w))
+    except Exception as e:
+        print(f"\033[1;31m[!] Không hiển thị được bảng trạng thái: {e}\033[0m")
+
+def notify_tool_stopped(reason, unexpected=False):
+    if not WEBHOOK_URL:
+        return
+    up = fmt_duration(time.time() - START_UP_TIME.timestamp()) if START_UP_TIME else "?"
+    total = sum(REJOIN_COUNT.values())
+    print("\033[1;33m[*] Đang gửi cảnh báo dừng tool lên Discord...\033[0m")
+    send_detailed_alert("aborted" if unexpected else "stopped", "Tool đã dừng",
+                        f"Tool đã dừng sau **{up}** chạy, tổng cộng **{total}** lần rejoin.",
+                        reason=reason,
+                        action="Cần mở lại tool để tiếp tục treo máy" if unexpected else "Người dùng chủ động dừng, không cần xử lý")
+
+# ---- Cảnh báo RAM thấp ----
+LOW_RAM_ALERT = True
+LOW_RAM_MB = 500
+LOW_RAM_AUTO_CLEAN = True
+LOW_RAM_COOLDOWN_SEC = 300
+_LOW_RAM_LAST = 0
+
+# ---- Kiểm tra cập nhật ----
+UPDATE_URL = "https://paintool-bot.onrender.com/api/version"
+UPDATE_INFO = {"latest": None, "status": None}
+
+# ---- Profile & hẹn giờ ----
+PROFILES = {}
+SCHEDULE = {"start": "", "stop": ""}
+SCHED_FIRED = {}
+STOP_REASON = ""
+RUN_LIMIT_HOURS = 0
+QUIET_HOURS = {"enabled": False, "start": "23:00", "end": "07:00"}
+STOP_TIMER = {"enabled": False, "hours": 6, "close_apps": False}
+MONITOR_ONLY = False
+SCREEN_ARCHIVE = {"enabled": False}
+ROBLOX_VERSIONS = {}
+SHOT_DIR = "/sdcard/Pictures/PainTool"
+SHOT_KEEP = 50
+_LISTENER_GEN = 0
+
+# ---- Game-specific profiles ----
+GAME_PROFILES = {}
+PACKAGE_GAMES = {}
+
+# ==================== BAN PATTERN TRACKING ====================
+BAN_TRACKER = {
+    "error_262_count": 0,
+    "error_262_streak": 0,
+    "rejoin_fail_count": 0,
+    "cookie_change_count": 0,
+    "cookie_change_time": [],
+    "ban_risk_percent": 0,
+    "ban_warning": "",
+    "last_reset_time": time.time(),
+    "is_paused": False,
+    "pause_until": 0
+}
+
+# ==================== SELECTED PACKAGES (User Choice) ====================
+SELECTED_PACKAGES = []
+SELECT_ALL_PACKAGES = True
+EXECUTOR_BINDING = {}
+
+def _valid_hhmm(v):
+    return isinstance(v, str) and bool(re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v))
+
+# ==================== CẢNH BÁO RAM THẤP ====================
+def get_free_ram_mb():
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return None
+
+def check_low_ram(packages):
+    global _LOW_RAM_LAST
+    if not LOW_RAM_ALERT:
+        return
+    free = get_free_ram_mb()
+    if free is None or free >= LOW_RAM_MB:
+        return
+    now = time.time()
+    if now - _LOW_RAM_LAST < LOW_RAM_COOLDOWN_SEC:
+        return
+    _LOW_RAM_LAST = now
+    msg = f"RAM trống chỉ còn {free} MB (ngưỡng {LOW_RAM_MB} MB)."
+    print(f"\033[1;33m[!] {msg}\033[0m")
+    action = None
+    if LOW_RAM_AUTO_CLEAN:
+        if root_mode():
+            for pkg in packages:
+                sh(f"rm -rf /data/data/{pkg}/cache/* /data/data/{pkg}/code_cache/*")
+            sh("sync && echo 3 > /proc/sys/vm/drop_caches")
+            after = get_free_ram_mb()
+            action = f"Đã tự dọn cache và RAM (trống: {free} MB → {after if after is not None else 'N/A'} MB)"
+            print(f"\033[1;32m[✓] {action}\033[0m")
+        else:
+            action = "Không tự dọn được vì máy không có root"
+            print(f"\033[1;31m[!] {action}\033[0m")
+    log_event("LOW_RAM", detail=f"{free}MB trống" + (f" | {action}" if action else ""))
+    notify_async("warn", "RAM thấp", "Máy sắp thiếu RAM, tab có thể bị treo hoặc văng.", reason=msg, action=action)
+
+# ==================== KIỂM TRA CẬP NHẬT ====================
+def _parse_ver(v):
+    m = re.search(r"(\d+(?:\.\d+)+)", v or "")
+    return tuple(int(x) for x in m.group(1).split(".")) if m else None
+
+def fetch_latest_version():
+    out = run_cmd(["curl", "-s", "-m", "8", UPDATE_URL], timeout=12)
+    if not out or out.lstrip().startswith("<"):
+        return None
+    try:
+        d = json.loads(out)
+        v = (d.get("version") or d.get("latest") or "") if isinstance(d, dict) else str(d)
+    except Exception:
+        v = out.strip().splitlines()[0][:40]
+    return v if _parse_ver(v) else None
+
+def update_available():
+    cur, new = _parse_ver(VERSION), _parse_ver(UPDATE_INFO.get("latest"))
+    return bool(cur and new and new > cur)
+
+def update_status_line():
+    st = UPDATE_INFO.get("status")
+    if st == "checking":
+        return f"{C.YEL}Đang kiểm tra phiên bản...{C.R}"
+    if st == "new":
+        return f"{C.YEL}Có bản mới {UPDATE_INFO.get('latest')} (đang dùng {VERSION}). Lấy tại Discord.{C.R}"
+    if st == "latest":
+        return f"{C.GRN}Bạn đang dùng bản mới nhất ({VERSION}).{C.R}"
+    if st == "fail":
+        return f"{C.GRY}Không kiểm tra được phiên bản (bỏ qua).{C.R}"
+    return ""
+
+def check_update_on_launch(hwid):
+    UPDATE_INFO["status"] = "checking"
+    license_screen(hwid)
+    try:
+        latest = fetch_latest_version()
+    except Exception:
+        latest = None
+    UPDATE_INFO["latest"] = latest
+    if not latest:
+        UPDATE_INFO["status"] = "fail"
+    elif update_available():
+        UPDATE_INFO["status"] = "new"
+    else:
+        UPDATE_INFO["status"] = "latest"
+
+# ==================== PROFILE ====================
+def profile_snapshot():
+    return {"target_link": TARGET_LINK, "selected_game_name": SELECTED_GAME_NAME if TARGET_LINK else "",
+            "auto_rejoin_mode": AUTO_REJOIN_MODE, "delay_rejoin_minutes": DELAY_REJOIN_MINUTES,
+            "package_prefix": PACKAGE_PREFIX}
+
+def apply_profile(p):
+    global TARGET_LINK, SELECTED_GAME_NAME, AUTO_REJOIN_MODE, DELAY_REJOIN_MINUTES, PACKAGE_PREFIX
+    link = p.get("target_link")
+    if isinstance(link, str) and link.strip():
+        TARGET_LINK = link.strip()
+        name = p.get("selected_game_name")
+        SELECTED_GAME_NAME = name.strip() if isinstance(name, str) and name.strip() else (
+            f"Game ID: {TARGET_LINK}" if TARGET_LINK.isdigit() else "Server VIP Custom")
+    else:
+        TARGET_LINK, SELECTED_GAME_NAME = "", "Chưa chọn"
+    if p.get("auto_rejoin_mode") in (1, 2) and not isinstance(p.get("auto_rejoin_mode"), bool):
+        AUTO_REJOIN_MODE = p["auto_rejoin_mode"]
+    d = p.get("delay_rejoin_minutes")
+    if isinstance(d, int) and not isinstance(d, bool) and d > 0:
+        DELAY_REJOIN_MINUTES = d
+    pref = p.get("package_prefix")
+    if isinstance(pref, str) and pref.strip():
+        PACKAGE_PREFIX = pref.strip()
+
+def profile_summary(p):
+    game = p.get("selected_game_name") if p.get("target_link") else "chưa chọn game"
+    mode = "Auto rejoin" if p.get("auto_rejoin_mode", 1) == 1 else f"Delay {p.get('delay_rejoin_minutes', DELAY_REJOIN_MINUTES)}p"
+    return f"{game or 'Game'} · {mode} · {p.get('package_prefix', PACKAGE_PREFIX)}"
+
+def pick_profile(prompt):
+    names = sorted(PROFILES)
+    if not names:
+        msg_err("Chưa có profile nào. Chọn [1] để lưu cấu hình hiện tại.")
+        return None
+    for i, n in enumerate(names, 1):
+        print(f" {C.LPUR}{i:>2}.{C.R} {C.WHT}{n}{C.R} {C.GRY}({clip(profile_summary(PROFILES[n]), 40)}){C.R}")
+    c = input(prompt).strip()
+    if c.isdigit() and 1 <= int(c) <= len(names):
+        return names[int(c) - 1]
+    if c not in ("", "0"):
+        msg_err("Lựa chọn không hợp lệ.")
+    return None
+
+# ==================== HẸN GIỜ TỰ CHẠY / TỰ DỪNG ====================
+def _parse_hhmm(raw):
+    m = re.fullmatch(r"\s*(\d{1,2})\s*[:h.]\s*(\d{2})\s*", raw or "")
+    if not m:
+        return None
+    hh, mm = int(m.group(1)), int(m.group(2))
+    return f"{hh:02d}:{mm:02d}" if (hh < 24 and mm < 60) else None
+
+def _today_at(hhmm, day_offset=0):
+    d = datetime.now().replace(hour=int(hhmm[:2]), minute=int(hhmm[3:]), second=0, microsecond=0)
+    return d + timedelta(days=day_offset)
+
+def schedule_start_due():
+    hhmm = SCHEDULE.get("start")
+    if not _valid_hhmm(hhmm):
+        return False
+    now = datetime.now()
+    t = _today_at(hhmm)
+    if t <= now < t + timedelta(minutes=10) and SCHED_FIRED.get("start") != now.date():
+        SCHED_FIRED["start"] = now.date()
+        return True
+    return False
+
+def schedule_stop_due():
+    hhmm = SCHEDULE.get("stop")
+    if not _valid_hhmm(hhmm) or not START_UP_TIME:
+        return False
+    now = datetime.now()
+    for off in (0, -1):
+        t = _today_at(hhmm, off)
+        if t <= now < t + timedelta(minutes=60) and START_UP_TIME < t:
+            return True
+    return False
+
+def ask_main(label):
+    print(f" {C.PUR}›{C.R} {C.WHT}{label}{C.R} ", end="", flush=True)
+    if not _valid_hhmm(SCHEDULE.get("start")):
+        return input()
+    while True:
+        try:
+            ready, _, _ = select.select([sys.stdin], [], [], 1)
+        except Exception:
+            return input()
+        if ready:
+            line = sys.stdin.readline()
+            if not line:
+                raise EOFError
+            return line.rstrip("\n")
+        if schedule_start_due():
+            print()
+            msg_info(f"Đến giờ hẹn {SCHEDULE['start']}: tự động Start...")
+            log_event("SCHEDULE", detail=f"Tự động Start theo hẹn giờ {SCHEDULE['start']}")
+            time.sleep(1)
+            return "1"
+
+# ---- Biệt danh, kiểm tra mạng, Low Graphics ----
+ALIASES = {}
+NET_CHECK = True
+GFX_FILE = "GlobalBasicSettings_13.xml"
+GFX_LOW = True
+GFX_FPS = 30
+GFX_AUTO = False
+AUTO_RESTART_HOURS = 0
+AUTO_RESTART_ACTION = "reset"
+NEXT_AUTO_RESTART = None
+SCREENSHOT_MIN_GAP_SEC = 60
+_LAST_SHOT = 0
+EXECUTOR_NAMES = ["Delta", "Codex", "ArceusX", "Fluxus", "Hydrogen", "Valyse", "VegaX", "Krampus", "Evon"]
+
+def tab_name(pkg):
+    return ALIASES.get(pkg) or pkg
+
+def tab_label(pkg):
+    return f"{ALIASES[pkg]} ({pkg})" if ALIASES.get(pkg) else pkg
+
+# ==================== KIỂM TRA MẠNG TRƯỚC KHI REJOIN ====================
+def _rc(cmd, timeout=6):
+    try:
+        return subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, timeout=timeout).returncode
+    except Exception:
+        return -1
+
+def is_online():
+    if _rc(["ping", "-c", "1", "-W", "3", "8.8.8.8"], timeout=6) == 0:
+        return True
+    out = run_cmd(["curl", "-s", "-m", "5", "-o", "/dev/null", "-w", "%{http_code}",
+                   "http://connectivitycheck.gstatic.com/generate_204"], timeout=8)
+    return out.strip() in ("204", "200")
+
+def wait_for_network(label=""):
+    if not NET_CHECK or is_online():
+        return False, 0
+    t0 = time.time()
+    print(f"\033[1;31m[!] Mất Internet (ping 8.8.8.8 thất bại). Tạm dừng rejoin, chờ có mạng lại...\033[0m")
+    log_event("NET_DOWN", pkg=label or None, detail="Mất Internet, tạm dừng rejoin")
+    last_print = time.time()
+    while True:
+        if wait_with_stop_check(5):
+            return True, int(time.time() - t0)
+        if is_online():
+            break
+        if time.time() - last_print >= 30:
+            last_print = time.time()
+            print(f"\033[1;33m[*] Vẫn chưa có mạng ({int(time.time() - t0)}s)...\033[0m")
+    down = int(time.time() - t0)
+    print(f"\033[1;32m[✓] Đã có mạng trở lại sau {down}s. Tiếp tục rejoin.\033[0m")
+    log_event("NET_UP", detail=f"Mạng trở lại sau {down}s")
+    notify_async("warn", "Mất mạng đã khôi phục", f"Máy mất Internet {down}s, tool đã tạm dừng rejoin và tiếp tục lại.",
+                 reason=f"Mất Internet {down}s", action="Đã tạm dừng đếm ngược / mở app cho tới khi có mạng")
+    return False, down
+
+# ==================== CLIENT KEY INJECTOR ====================
+KEY_AUTO = True
+KEY_FILES = {}
+KEY_VAULT_DIR = os.path.join(os.path.expanduser("~"), ".pain_keyvault")
+KEY_SAVE_INTERVAL_SEC = 600
+KEY_MAX_BYTES = 64 * 1024
+
+# ==================== PHÁT HIỆN MÀN HÌNH TRẮNG/ĐEN, GUI ĐỨNG, NOT RESPONDING ====================
+WB_DETECT = True
+OVERLAY_DETECT = True
+SCREEN_CHECK_SEC = 15
+SCREEN_GRACE_SEC = 60
+WB_CONFIRM_COUNT = 3
+WB_UNIFORM_RATIO = 0.995
+OVERLAY_FREEZE_SEC = 150
+SCREEN_COOLDOWN_SEC = 120
+MAP_POLL_SEC = 3
+WB_JOIN_CONFIRM = 3
+JOIN_MARKERS = ("joining game", "connection accepted", "replicator created", "game join succeeded")
+SCREEN_STATE = {}
+SCREEN_COOLDOWN = {}
+LAUNCHED_AT = {}
+ANR_SEEN = {}
+_SCREEN_LAST_SWEEP = 0
+_FRAME_WARNED = False
+SCREEN_REASON_KEYS = ("màn hình trắng", "màn hình đen", "not responding", "overlay")
+_FRAME_RX = re.compile(r"(?:mFrame|frame)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
+
+def is_screen_reason(reason):
+    low = (reason or "").lower()
+    return any(k in low for k in SCREEN_REASON_KEYS)
+
+def sh_bytes(cmd, timeout=15):
+    args = ["su", "-c", cmd] if root_mode() == "su" else ["sh", "-c", cmd]
+    try:
+        return subprocess.run(args, capture_output=True, stdin=subprocess.DEVNULL, timeout=timeout).stdout
+    except Exception:
+        return b""
+
+# ---------- Key vault ----------
+def _app_dir(pkg):
+    return f"/data/data/{pkg}"
+
+def _is_app_private(path):
+    return path.startswith("/data/data/") or path.startswith("/data/user/")
+
+def _key_dir(pkg):
+    return os.path.join(KEY_VAULT_DIR, re.sub(r"[^\w.\-]", "_", pkg))
+
+def _key_slot(path):
+    return hashlib.sha1(path.encode("utf-8")).hexdigest()[:12]
+
+def _key_index_path():
+    return os.path.join(KEY_VAULT_DIR, "index.json")
+
+def _key_index_load():
+    try:
+        with open(_key_index_path(), "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def _key_index_save(idx):
+    os.makedirs(KEY_VAULT_DIR, exist_ok=True)
+    os.chmod(KEY_VAULT_DIR, 0o700)
+    tmp = _key_index_path() + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(idx, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _key_index_path())
+
+def key_candidates(pkg):
+    q = shlex.quote
+    roots = [_app_dir(pkg), f"/sdcard/Android/data/{pkg}"] + [f"/sdcard/{n}" for n in EXECUTOR_NAMES]
+    cmd = ("find " + " ".join(q(r) for r in roots) +
+           " -maxdepth 5 -type f \\( -iname '*key*' -o -iname '*token*' -o -iname '*license*' \\) -size -64k"
+           " ! -iname '*keyboard*' ! -iname '*.log' ! -path '*/cache/*' ! -path '*/code_cache/*'"
+           " ! -path '*/app_webview/*' ! -path '*/app_textures/*' 2>/dev/null | head -n 40")
+    out = sh(cmd, timeout=25)
+    return [x.strip() for x in out.splitlines() if x.strip().startswith("/")]
+
+def key_save(pkg):
+    paths = KEY_FILES.get(pkg) or []
+    if not paths:
+        return 0, 0
+    d = _key_dir(pkg)
+    os.makedirs(d, exist_ok=True)
+    os.chmod(KEY_VAULT_DIR, 0o700)
+    os.chmod(d, 0o700)
+    idx = _key_index_load()
+    entries = idx.setdefault(pkg, {})
+    changed = skipped = 0
+    for path in paths:
+        data = sh_bytes(f"cat {shlex.quote(path)} 2>/dev/null")
+        if not data or len(data) > KEY_MAX_BYTES:
+            skipped += 1
+            continue
+        slot = _key_slot(path)
+        fp = os.path.join(d, slot + ".bin")
+        old = None
+        if os.path.exists(fp):
+            with open(fp, "rb") as f:
+                old = f.read()
+        if old == data and path in entries:
+            continue
+        if old is not None:
+            os.replace(fp, fp + ".prev")
+        tmp = fp + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, fp)
+        meta = sh(f"stat -c '%u:%g %a' {shlex.quote(path)}", timeout=5).split()
+        entries[path] = {"slot": slot, "saved": int(time.time()),
+                         "owner": meta[0] if len(meta) > 0 else "", "mode": meta[1] if len(meta) > 1 else ""}
+        changed += 1
+    _key_index_save(idx)
+    return changed, skipped
+
+def _key_write(pkg, path, fp, meta):
+    q = shlex.quote
+    private = _is_app_private(path)
+    app_owner = ""
+    if private:
+        app_owner = sh(f"stat -c %u:%g {q(_app_dir(pkg))}", timeout=5).strip()
+        if not re.fullmatch(r"\d+:\d+", app_owner):
+            return False
+    parent = os.path.dirname(path)
+    missing, p = [], parent
+    while p and p != "/" and p != _app_dir(pkg) and "1" not in sh(f"[ -d {q(p)} ] && echo 1", timeout=5):
+        missing.append(p)
+        p = os.path.dirname(p)
+    sh(f"mkdir -p {q(parent)}", timeout=8)
+    if private:
+        for m in missing:
+            sh(f"chown {app_owner} {q(m)}; restorecon {q(m)} 2>/dev/null", timeout=8)
+    sh(f"cat {q(fp)} > {q(path)}", timeout=15)
+    if get_file_size(path) != os.path.getsize(fp):
+        return False
+    if private:
+        sh(f"chown {app_owner} {q(path)}", timeout=8)
+        mode = meta.get("mode") or ""
+        if re.fullmatch(r"[0-7]{3,4}", mode):
+            sh(f"chmod {mode} {q(path)}", timeout=8)
+        sh(f"restorecon {q(path)} 2>/dev/null", timeout=8)
+    return True
+
+def key_ensure(pkg, force=False):
+    if not force and not KEY_AUTO:
+        return 0
+    entries = _key_index_load().get(pkg) or {}
+    if not entries or not root_mode():
+        return 0
+    n = 0
+    for path, meta in entries.items():
+        fp = os.path.join(_key_dir(pkg), str(meta.get("slot", "")) + ".bin")
+        if not os.path.isfile(fp):
+            continue
+        if not force and get_file_size(path) > 0:
+            continue
+        if _key_write(pkg, path, fp, meta):
+            n += 1
+    if n:
+        log_event("KEY", pkg, f"Đã chèn lại {n} file key/token từ vault")
+        print(f"\033[1;32m[✓] Key Injector: đã chèn lại {n} file key/token cho {tab_label(pkg)} (không cần nhập key lại).\033[0m")
+    return n
+
+def key_ensure_all(packages):
+    for pkg in packages:
+        if stop_start:
+            break
+        if KEY_FILES.get(pkg) and not is_app_running(pkg):
+            key_ensure(pkg)
+
+def key_autosave(packages):
+    now = time.time()
+    for pkg in packages:
+        if stop_start:
+            break
+        joined = JOINED_AT.get(pkg)
+        if not KEY_FILES.get(pkg) or not joined or now - joined < BACKUP_STABLE_SECONDS or not is_app_running(pkg):
+            continue
+        try:
+            changed, _skipped = key_save(pkg)
+        except Exception:
+            continue
+        if changed:
+            log_event("KEY", pkg, f"Đã cập nhật {changed} file key/token trong vault")
+            print(f"\033[1;32m[✓] Key Injector: đã lưu / cập nhật {changed} file key cho {tab_label(pkg)}.\033[0m")
+
+def key_label():
+    n = sum(len(v) for v in KEY_FILES.values())
+    return f"{n} file · {'Bật' if KEY_AUTO else 'Tắt'}" if n else "chưa chọn file"
+
+# ---------- Đọc màn hình ----------
+def parse_raw_frame(data):
+    if not data or len(data) < 16:
+        return None
+    w, h, fmt = struct.unpack("<III", data[:12])
+    if not (64 <= w <= 8192 and 64 <= h <= 8192) or fmt not in (1, 2):
+        return None
+    need = w * h * 4
+    for hdr in (12, 16):
+        if len(data) - hdr == need:
+            return (w, h, memoryview(data)[hdr:])
+    return None
+
+def capture_frame():
+    return parse_raw_frame(sh_bytes("screencap", timeout=20))
+
+def analyze_frame(frame, rect=None, gx=48, gy=80):
+    w, h, buf = frame
+    l, t, r, b = rect if rect else (0, 0, w, h)
+    l, t, r, b = max(0, l), max(0, t), min(w, r), min(h, b)
+    if r - l < 64 or b - t < 64:
+        return None
+    lum = bytearray()
+    for j in range(gy):
+        y = t + (b - t) * (2 * j + 1) // (2 * gy)
+        base = y * w * 4
+        for i in range(gx):
+            o = base + (l + (r - l) * (2 * i + 1) // (2 * gx)) * 4
+            lum.append((buf[o] * 299 + buf[o + 1] * 587 + buf[o + 2] * 114) // 1000)
+    n = len(lum)
+    med = sorted(lum)[n // 2]
+    ratio = sum(1 for v in lum if abs(v - med) <= 8) / n
+    kind = "ok"
+    if ratio >= WB_UNIFORM_RATIO:
+        if med >= 235:
+            kind = "white"
+        elif med <= 20:
+            kind = "black"
+    return {"kind": kind, "median": med, "uniform": round(ratio, 4), "fp": hashlib.md5(bytes(lum)).hexdigest()}
+
+def window_snapshot(packages):
+    dump = sh("dumpsys window windows", timeout=12)
     if "Window #" not in dump:
         dump = sh("dumpsys window", timeout=12)
     focus = None
@@ -4079,109 +4903,137 @@ def _read_cookies_from_prefs(pkg):
     return found, None
 
 def get_cookie_account():
-    """Lấy cookie .ROBLOSECURITY từ package Roblox đã đăng nhập"""
+    """Lấy cookie từ package đã chọn hoặc tất cả package"""
     clear_screen()
     section_title("LẤY COOKIE ACCOUNT ROBLOX")
 
-    print(f"{C.GRY}Tính năng này giúp bạn lấy cookie từ package clone mà bạn đã setup.{C.R}\n")
+    print(f"{C.GRY}Lấy .ROBLOSECURITY từ package Roblox trên thiết bị{C.R}\n")
 
-    if not root_mode():
-        msg_err("Máy không có root, không thể lấy cookie từ package.")
+    # Get list of packages to extract from
+    active = get_active_packages()
+    if not active:
+        msg_err("Không có package nào đang chạy.")
         wait_enter()
         return
 
-    packages = get_all_packages()
-    if not packages:
-        msg_err("Không tìm thấy package Roblox nào trên thiết bị.")
+    # If SELECTED_PACKAGES is set, use it; otherwise use all active
+    packages_to_check = list(SELECTED_PACKAGES) if SELECTED_PACKAGES else active
+    if not packages_to_check:
+        packages_to_check = active
+
+    cookies_found = []
+
+    for pkg in sorted(packages_to_check):
+        if pkg not in active:
+            continue
+
+        print(f"{C.GRY}Kiểm tra {pkg}...{C.R}")
+
+        # Try WebView DB first
+        found_cookies, reason = _read_cookies_from_webview_db(pkg)
+
+        # Fallback to prefs
+        if not found_cookies or COOKIE_NAME not in found_cookies:
+            found_cookies, reason = _read_cookies_from_prefs(pkg)
+
+        if COOKIE_NAME in found_cookies:
+            cookie = found_cookies[COOKIE_NAME]
+            valid, msg = roblox_check_cookie(cookie)
+
+            status = f"{C.GRN}✓ Còn hạn{C.R}"
+            if valid is False:
+                status = f"{C.RED}✗ Hết hạn{C.R}"
+            elif valid is None:
+                status = f"{C.YEL}? Không kiểm tra được{C.R}"
+
+            cookies_found.append((pkg, cookie, status))
+            print(f"  {status}\n")
+        else:
+            print(f"  {C.RED}✗ Không tìm thấy cookie{C.R}\n")
+
+    if not cookies_found:
+        msg_err("Không tìm thấy cookie nào trong các package đang chạy.")
         wait_enter()
         return
 
-    print(f"Tìm thấy {len(packages)} packages:\n")
-    for i, pkg in enumerate(packages, 1):
-        print(f" {C.LPUR}[{i}]{C.R} {pkg}")
+    # Display found cookies
+    clear_screen()
+    section_title("COOKIE FOUND")
+    print(f"Tìm thấy {len(cookies_found)} cookie:\n")
 
-    print(f"\n{C.GRY}(Hoặc nhập tên package trực tiếp, ví dụ: com.roblox.clone1){C.R}\n")
-    choice = ask("Chọn package (số hoặc tên):").strip()
+    for i, (pkg, cookie, status) in enumerate(cookies_found, 1):
+        print(f"{C.LPUR}[{i}]{C.R} {pkg}")
+        print(f"    {status}")
+        print(f"    {cookie_preview(cookie)}\n")
 
-    selected_pkg = None
-    if choice.isdigit() and 1 <= int(choice) <= len(packages):
-        selected_pkg = packages[int(choice) - 1]
-    elif choice in packages:
-        selected_pkg = choice
+    print(f"{C.LPUR}[1]{C.R} Copy cookie đầu tiên")
+    print(f"{C.LPUR}[2]{C.R} Chọn package để copy")
+    print(f"{C.LPUR}[3]{C.R} Lưu tất cả vào file")
+    print(f"{C.RED}[0] Quay lại{C.R}\n")
 
-    if not selected_pkg:
-        msg_err("Package không hợp lệ.")
-        wait_enter()
-        return
+    choice = ask("Chọn:").strip()
 
-    print(f"\n{C.YEL}[*] Đang lấy cookie từ {selected_pkg}...{C.R}")
-
-    try:
-        found, reason = _read_cookies_from_webview_db(selected_pkg)
-        if not found:
-            found_p, reason_p = _read_cookies_from_prefs(selected_pkg)
-            if found_p:
-                found, reason = found_p, None
-            else:
-                reason = reason or reason_p
-        if not found:
-            msg_warn(f"Không lấy được cookie: {reason}")
-            wait_enter()
-            return
-
-        found_cookies = []
-        if "RBXID" in found:
-            found_cookies.append(("RBXID", found["RBXID"]))
-        found_cookies.append((COOKIE_NAME, normalize_cookie(found[COOKIE_NAME])))
-
-        print(f"\n{C.GRN}✓ Tìm thấy {len(found_cookies)} cookie:{C.R}\n")
-        for name, value in found_cookies:
-            print(f"{C.LPUR}[{name}]{C.R}")
-            print(f"  {value[:50]}..." if len(value) > 50 else f"  {value}")
-            print()
-
-        print(f"{C.YEL}1. Copy toàn bộ cookie (dạng .ROBLOSECURITY){C.R}")
-        print(f"{C.YEL}2. Lưu vào file{C.R}")
-        print(f"{C.RED}0. Quay lại{C.R}\n")
-
-        sub = ask("Chọn:").strip()
-
-        if sub == "1":
-            cookie_value = found_cookies[-1][1]
-            print(f"\n{C.GRN}Cookie đã copy:{C.R}\n{cookie_value}\n")
-            msg_info("Bạn có thể dán cookie vào mục [11] > [1] Đăng nhập Cookie Roblox")
-        elif sub == "2":
-            print(f"{C.YEL}[*] Đang lấy tên tài khoản Roblox...{C.R}")
-            ok_user, data = roblox_check_cookie(found[COOKIE_NAME])
-            if ok_user and isinstance(data, dict) and data.get("name"):
-                username = data["name"]
-                msg_info(f"Tài khoản: {username} (ID {data.get('id')})")
-            else:
-                username = found.get("RBXID") or "unknown"
-                msg_warn(f"Không lấy được tên tài khoản ({data}). Dùng ID: {username}")
-
-            download_dir = "/sdcard/Download"
-            filename = f"cookie-{username}.txt"
-            filepath = f"{download_dir}/{filename}"
+    if choice == "1":
+        cookie = cookies_found[0][1]
+        import subprocess
+        try:
+            subprocess.run(["xclip", "-selection", "clipboard"], input=cookie.encode(), timeout=5)
+            msg_done(f"Đã copy vào clipboard: {cookie_preview(cookie)}")
+        except:
             try:
-                os.makedirs(download_dir, exist_ok=True)
-                with open(filepath, "w", encoding="utf-8") as f:
-                    for name, value in found_cookies:
-                        f.write(f"{value}\n")
-                msg_done(f"Đã lưu cookie vào:\n{filepath}")
-                print(f"\n{C.GRY}File: {filename}{C.R}")
-                print(f"{C.GRY}Thư mục: {download_dir}{C.R}")
-            except Exception as e:
-                msg_err(f"Lỗi khi lưu file: {str(e)}")
-                time.sleep(1)
-                return
-
+                with open(COOKIE_FILE_DEFAULT, "w") as f:
+                    f.write(cookie)
+                msg_done(f"Clipboard không khả dụng, lưu vào: {COOKIE_FILE_DEFAULT}")
+            except:
+                msg_err("Không thể copy/lưu cookie.")
         wait_enter()
 
-    except Exception as e:
-        msg_err(f"Lỗi khi lấy cookie: {str(e)}")
-        wait_enter()
+    elif choice == "2":
+        idx = ask(f"Chọn [1-{len(cookies_found)}]:").strip()
+        if idx.isdigit() and 1 <= int(idx) <= len(cookies_found):
+            cookie = cookies_found[int(idx) - 1][1]
+            import subprocess
+            try:
+                subprocess.run(["xclip", "-selection", "clipboard"], input=cookie.encode(), timeout=5)
+                msg_done(f"Đã copy vào clipboard: {cookie_preview(cookie)}")
+            except:
+                try:
+                    with open(COOKIE_FILE_DEFAULT, "w") as f:
+                        f.write(cookie)
+                    msg_done(f"Lưu vào: {COOKIE_FILE_DEFAULT}")
+                except:
+                    msg_err("Không thể copy/lưu cookie.")
+            wait_enter()
+        else:
+            msg_err("Lựa chọn không hợp lệ.")
+            wait_enter()
 
+    elif choice == "3":
+        save_file = ask("Nhập tên file (mặc định: cookies.json):").strip() or "cookies.json"
+        if not save_file.endswith(".json"):
+            save_file += ".json"
+
+        import json
+        data = {
+            "timestamp": datetime.now().isoformat(),
+            "cookies": [
+                {
+                    "package": pkg,
+                    "cookie": cookie,
+                    "preview": cookie_preview(cookie),
+                    "status": status.replace(C.GRN, "").replace(C.RED, "").replace(C.YEL, "").replace(C.R, "").strip()
+                }
+                for pkg, cookie, status in cookies_found
+            ]
+        }
+
+        try:
+            with open(save_file, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            msg_done(f"Lưu {len(cookies_found)} cookie vào: {save_file}")
+        except Exception as e:
+            msg_err(f"Lỗi lưu file: {str(e)}")
+        wait_enter()
 
 def menu_cookie_roblox():
     """Menu chính cho Cookie Roblox - chọn giữa Login hoặc Get Cookie"""
@@ -5721,10 +6573,10 @@ def menu_choose_game_with_package():
     section_title("CHỌN GAME & LIÊN KẾT PACKAGE")
 
     # Step 1: Game selection
-    print(f"\n{C.WHT}Set Up {C.LPUR}|{C.R}\n")
+    print(f"\n{C.WHT}Set Up{C.R}\n")
     for k, (name, _gid) in GAMES.items():
         print(f"\033[1;37m{k}. {name}\033[0m")
-    print(f"{C.GRN}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
+    print(f"{C.LPUR}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
 
     game_choice = input(f"\n{C.WHT}Chọn game [1-12]:{C.R} ").strip()
 
@@ -5817,7 +6669,7 @@ def menu_choose_game():
     section_title("CHỌN GAME")
     for k, (name, _gid) in GAMES.items():
         print(f"\033[1;37m{k}. {name}\033[0m")
-    print(f"{C.GRN}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
+    print(f"{C.LPUR}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
     game_choice = input("Chọn game [1-12]: ").strip()
     if game_choice in GAMES:
         SELECTED_GAME_NAME, TARGET_LINK = GAMES[game_choice]
