@@ -986,7 +986,8 @@ def load_saved_config():
     global GFX_LOW, GFX_FPS, GFX_AUTO, AUTO_RESTART_HOURS, AUTO_RESTART_ACTION
     global KEY_AUTO, WB_DETECT, OVERLAY_DETECT, SERVER_HOP, HOP_PING_MS, BLACK_SCREEN
     global GAME_PROFILES, EXECUTOR_BINDING, PACKAGE_GAMES
-    global GROQ_API_KEY, GROQ_ENABLED
+    global GROQ_API_KEY, GROQ_ENABLED, MONITOR_ONLY
+    global QUIET_HOURS, STOP_TIMER, SCREEN_ARCHIVE, ROBLOX_VERSIONS
     if not os.path.exists(CONFIG_FILE):
         return
     try:
@@ -3326,79 +3327,66 @@ def menu_custom_count_mode(packages_list):
         time.sleep(1)
 
 def menu_selective_mode(packages_list):
-    """Chế độ Selective: user chọn riêng packages muốn chạy"""
+    """Selective: nhập số để thêm/bỏ package khỏi danh sách chạy, thông báo ngay"""
     global SELECTED_PACKAGES, SELECT_ALL_PACKAGES
-    
-    selected = []
-    
+
+    selected = list(SELECTED_PACKAGES) if not SELECT_ALL_PACKAGES else []
+    notice = ""
     while True:
-        os.system("clear" if os.name == "posix" else "cls")
-        print("\n" + "="*60)
-        print("SELECTIVE MODE - CHỌN PACKAGES RIÊNG")
-        print("="*60)
-        print(f"\nTổng cộng: {len(packages_list)} packages khả dụng")
-        print(f"Đã chọn: {len(selected)} packages\n")
-        
-        # Hiển thị danh sách với dấu ✓
+        clear_screen()
+        section_title("SELECTIVE MODE - CHỌN PACKAGE CHẠY")
+        print(f"Tổng cộng: {len(packages_list)} package")
+        print(f"Đã chọn: {len(selected)} package")
+        print(f"{C.GRY}(chưa chọn gì thì tool chạy tất cả){C.R}\n")
         for i, pkg in enumerate(packages_list, 1):
-            mark = "✓" if pkg in selected else " "
-            print(f"{i:2}. [{mark}] {pkg}")
-        
-        print("\n" + "-"*60)
-        print("Nhập số để chọn/bỏ chọn (ví dụ: 1 2 4 hoặc 1,2,4)")
-        print("  • Nhập 'ok': Xác nhận và lưu lựa chọn")
-        print("  • Nhập 'reset': Xóa tất cả lựa chọn")
-        print("  • Nhập 'q': Hủy và quay lại")
-        print("-"*60)
-        
-        user_input = input("\nNhập lựa chọn: ").strip().lower()
-        
-        if user_input == 'q':
+            mark = f"{C.GRN}✓{C.R}" if pkg in selected else " "
+            print(f" {C.LPUR}[{i:2}]{C.R} [{mark}] {pkg}")
+        print("\n" + "-" * 50)
+        print("Nhập số để thêm/bỏ package (ví dụ: 1 2 4 hoặc 1,2,4)")
+        print("  • reset: Xóa hết lựa chọn (chạy tất cả)")
+        print("  • ok / q: Quay lại")
+        print("-" * 50)
+        if notice:
+            print(f"\n{notice}")
+            notice = ""
+
+        user_input = ask("Nhập lựa chọn:").strip().lower()
+
+        if user_input in ("q", "ok"):
             return
-        elif user_input == 'ok':
-            if not selected:
-                print("Chưa chọn packages nào")
-                time.sleep(1)
-                continue
-            SELECTED_PACKAGES = selected.copy()
-            SELECT_ALL_PACKAGES = False
-            print(f"\nĐã chọn {len(selected)} packages:")
-            for pkg in selected:
-                print(f"    • {pkg}")
-            time.sleep(2)
-            return
-        elif user_input == 'reset':
+        if user_input == "reset":
             selected = []
-            print("✓ Đã xóa tất cả lựa chọn")
-            time.sleep(1)
-        else:
-            # Parse input: "1 2 3" hoặc "1,2,3"
-            try:
-                indices = []
-                for part in user_input.replace(',', ' ').split():
-                    idx = int(part.strip())
-                    if 1 <= idx <= len(packages_list):
-                        indices.append(idx - 1)
-                    else:
-                        print(f"Số {idx} không hợp lệ (1-{len(packages_list)})")
-                        time.sleep(1)
-                        continue
-                
-                # Toggle selection
-                for idx in indices:
-                    pkg = packages_list[idx]
-                    if pkg in selected:
-                        selected.remove(pkg)
-                        print(f"Đã bỏ chọn: {pkg}")
-                    else:
-                        selected.append(pkg)
-                        print(f"Đã thêm: {pkg}")
-                    time.sleep(0.3)
-                
-                time.sleep(1)
-            except ValueError:
-                print("Vui lòng nhập số (ví dụ: 1 2 3)")
-                time.sleep(1)
+            SELECTED_PACKAGES = []
+            SELECT_ALL_PACKAGES = True
+            notice = f"{C.YEL}Đã xóa hết lựa chọn, tool sẽ chạy tất cả package.{C.R}"
+            continue
+
+        indices = []
+        bad = []
+        for part in user_input.replace(",", " ").split():
+            if part.isdigit() and 1 <= int(part) <= len(packages_list):
+                indices.append(int(part) - 1)
+            else:
+                bad.append(part)
+        if not indices:
+            notice = f"{C.RED}Lựa chọn không hợp lệ (nhập số từ 1 đến {len(packages_list)}).{C.R}"
+            continue
+
+        msgs = []
+        for idx in indices:
+            pkg = packages_list[idx]
+            if pkg in selected:
+                selected.remove(pkg)
+                msgs.append(f"{C.YEL}✗ Đã bỏ {pkg} khỏi danh sách chạy.{C.R}")
+            else:
+                selected.append(pkg)
+                msgs.append(f"{C.GRN}✓ Đã thêm {pkg} vào danh sách chạy!{C.R}")
+        if bad:
+            msgs.append(f"{C.RED}Bỏ qua: {' '.join(bad)}{C.R}")
+        notice = "\n".join(msgs)
+
+        SELECTED_PACKAGES = selected.copy()
+        SELECT_ALL_PACKAGES = not selected
 
 def menu_select_package_count():
     """Menu chọn packages - gọi hàm selector chế độ"""
@@ -3412,6 +3400,11 @@ def get_active_packages():
         return list(PACKAGE_GAMES.keys())
     else:
         return SELECTED_PACKAGES
+
+def get_running_packages():
+    """Package thực sự được chạy: có trong prefix và trong danh sách đã chọn"""
+    active = get_active_packages()
+    return [p for p in get_all_packages() if p in active]
 
 def launch_all(packages, hard=False):
     # Check ban status before launching
@@ -3524,7 +3517,7 @@ def start_tool():
         SCHED_FIRED["start"] = datetime.now().date()
     clear_screen()
     print_ascii_banner()
-    packages = get_all_packages()
+    packages = get_running_packages()
     START_UP_TIME = datetime.now()
     log_event("START", detail=f"{len(packages)} tab | game={SELECTED_GAME_NAME} | {get_rejoin_mode_str()}")
     for state in (LOG_STATE, LOGCAT_BASELINE, LAST_ACTIVITY, LAST_CLEAR, LAST_SOFT_JOIN, JOINED_AT, LAST_BACKUP, REJOIN_COUNT, SCREEN_STATE, LAUNCHED_AT, SCREEN_COOLDOWN, ANR_SEEN, HOP_OVERRIDE, HOP_CURRENT, HOP_LAST):
@@ -3641,7 +3634,7 @@ def start_tool():
             current_time = time.time()
             elapsed_minutes = (current_time - start_time) / 60.0
             if current_time - last_packages_time >= 30:
-                packages = get_all_packages()
+                packages = get_running_packages()
                 last_packages_time = current_time
 
             if (current_time - last_cleanup_time) >= 600:
@@ -4677,6 +4670,17 @@ def inject_cookie(pkg, cookie):
         sh(f"rm -f {q(db + '-journal')} {q(db + '-wal')} {q(db + '-shm')}", timeout=8)
         if get_file_size(db) != os.path.getsize(local):
             return False, "ghi lại file cookie chưa trọn vẹn, hãy thử lại"
+
+        # Xóa WebView cache để app dùng cookie mới (QUAN TRỌNG!)
+        cache_dirs = [
+            f"/data/data/{pkg}/cache",
+            f"/data/data/{pkg}/code_cache",
+            f"/data/data/{pkg}/app_webview/Cache",
+            f"/data/data/{pkg}/app_webview/Code Cache",
+        ]
+        for cache_dir in cache_dirs:
+            sh(f"rm -rf {q(cache_dir)}/* 2>/dev/null || true", timeout=10)
+
         return True, "đã ghi cookie vào tab"
     except Exception as e:
         return False, f"lỗi ghi cookie: {e}"
@@ -6541,10 +6545,10 @@ def menu_choose_game_with_package():
     section_title("CHỌN GAME & LIÊN KẾT PACKAGE")
 
     # Step 1: Game selection
-    print(f"\n{C.WHT}Set Up{C.R}\n")
+    print(f"\n{C.WHT}Set Up {C.LPUR}|{C.R}\n")
     for k, (name, _gid) in GAMES.items():
         print(f"\033[1;37m{k}. {name}\033[0m")
-    print(f"{C.LPUR}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
+    print(f"{C.GRN}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
 
     game_choice = input(f"\n{C.WHT}Chọn game [1-12]:{C.R} ").strip()
 
@@ -6637,7 +6641,7 @@ def menu_choose_game():
     section_title("CHỌN GAME")
     for k, (name, _gid) in GAMES.items():
         print(f"\033[1;37m{k}. {name}\033[0m")
-    print(f"{C.LPUR}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
+    print(f"{C.GRN}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
     game_choice = input("Chọn game [1-12]: ").strip()
     if game_choice in GAMES:
         SELECTED_GAME_NAME, TARGET_LINK = GAMES[game_choice]
@@ -7121,66 +7125,71 @@ def menu_setup():
             invalid_choice(sub)
 
 def menu_package_prefix():
-    """Menu 3: Nhập Package Prefix + Chọn Chế Độ Chạy Packages"""
-    global PACKAGE_PREFIX, SELECTED_PACKAGES, SELECT_ALL_PACKAGES, PACKAGE_GAMES
-    
-    # Step 1: Input/Update Package Prefix
+    """Menu 3: [1] Set up package prefix, [2] Chọn mode package muốn chạy"""
+    while True:
+        clear_screen()
+        section_title("PACKAGE PREFIX")
+        print(f" {C.LPUR}[1]{C.R} {C.WHT}Set up package prefix{C.R}")
+        print(f" {C.LPUR}[2]{C.R} {C.WHT}Chọn mode package muốn chạy{C.R}")
+        print(f" {C.RED}[0] Quay lại menu chính{C.R}\n")
+        sub = ask("Chọn:").strip()
+        if sub == "0":
+            return
+        if sub == "1":
+            menu_setup_package_prefix()
+        elif sub == "2":
+            menu_choose_run_mode()
+        else:
+            invalid_choice(sub)
+
+def menu_setup_package_prefix():
+    """Set up package prefix: chỉ nhập prefix rồi báo thành công"""
+    global PACKAGE_PREFIX
     clear_screen()
-    section_title("PACKAGE PREFIX - NHẬP VÀ CHỌN CHẾ ĐỘ")
-    
+    section_title("SET UP PACKAGE PREFIX")
     print(f"{C.GRY}Prefix hiện tại:{C.R} {C.WHT}{PACKAGE_PREFIX}{C.R}\n")
-    print(f"{C.YEL}Ví dụ: com.roblox → tìm com.roblox.clone1, clone2...{C.R}\n")
-    
-    pref = input("Nhập Package Prefix (Để trống để giữ mặc định): ").strip()
-    
+    pref = ask("Nhập Package Prefix (Để trống để giữ mặc định):").strip()
     if pref:
         PACKAGE_PREFIX = pref
         save_config_file()
-        msg_done(f"Đã cập nhật Package Prefix: {PACKAGE_PREFIX}")
-        time.sleep(1)
+        msg_done(f"Nhập package thành công: {PACKAGE_PREFIX}")
     else:
-        print(f"{C.GRY}[*] Giữ nguyên: {PACKAGE_PREFIX}{C.R}")
-        time.sleep(1)
-    
-    # Step 2: List packages & show mode selector
-    packages_list = list(PACKAGE_GAMES.keys())
-    
-    if not packages_list:
-        msg_err("Không tìm thấy package nào khớp prefix này.")
-        wait_enter()
-        return
-    
-    clear_screen()
-    section_title("CHỌN PACKAGES - NHẬP PREFIX THÀNH CÔNG")
-    
-    print(f"{C.GRN}✓ Tìm thấy {len(packages_list)} packages:{C.R}\n")
-    
-    for i, pkg in enumerate(packages_list, 1):
-        print(f" {C.LPUR}[{i:2}]{C.R} {pkg}")
-    
-    print(f"\n{C.YEL}Bây giờ chọn chế độ chạy packages:{C.R}\n")
-    
-    print(f"{C.LPUR}[1]{C.R} {C.WHT}Custom Count Mode{C.R}")
-    print(f"    → Nhập số N để chạy N packages đầu tiên")
-    print(f"    → Ví dụ: nhập 5 → chạy packages 1-5\n")
-    
-    print(f"{C.LPUR}[2]{C.R} {C.WHT}Selective Mode{C.R}")
-    print(f"    → Chọn riêng packages muốn chạy")
-    print(f"    → Ví dụ: chọn 1, 3, 5 → chỉ chạy packages này\n")
-    
-    print(f"{C.RED}[0] Quay lại menu chính{C.R}\n")
-    
-    mode_choice = ask("Chọn chế độ:").strip()
-    
-    if mode_choice == "0":
-        return
-    elif mode_choice == "1":
-        menu_custom_count_mode(packages_list)
-    elif mode_choice == "2":
-        menu_selective_mode(packages_list)
-    else:
-        msg_err("Lựa chọn không hợp lệ.")
-        time.sleep(1)
+        msg_info(f"Giữ nguyên: {PACKAGE_PREFIX}")
+    wait_enter()
+
+def menu_choose_run_mode():
+    """Chọn mode package muốn chạy: liệt kê package theo prefix, rồi Custom Count hoặc Selective"""
+    while True:
+        clear_screen()
+        section_title("CHỌN MODE PACKAGE MUỐN CHẠY")
+        packages_list = sorted(list_installed_packages())
+        if not packages_list:
+            msg_err(f"Không tìm thấy package nào khớp '{PACKAGE_PREFIX}'. Kiểm tra lại Set up package prefix.")
+            wait_enter()
+            return
+        print(f"{C.GRN}✓ Tìm thấy {len(packages_list)} package:{C.R}\n")
+        for i, pkg in enumerate(packages_list, 1):
+            print(f" {C.LPUR}[{i:2}]{C.R} {pkg}")
+        print()
+        if SELECTED_PACKAGES:
+            print(f"{C.YEL}Đang chọn chạy: {len(SELECTED_PACKAGES)} package{C.R}")
+        else:
+            print(f"{C.GRY}Đang chọn chạy: tất cả package{C.R}")
+        print(f"\n{C.LPUR}[1]{C.R} {C.WHT}Custom Count Mode{C.R}")
+        print(f"    → Nhập số N để chạy N package đầu tiên trong danh sách\n")
+        print(f"{C.LPUR}[2]{C.R} {C.WHT}Selective Mode{C.R}")
+        print(f"    → Chọn từng package, tool chỉ chạy các package đã chọn\n")
+        print(f"{C.RED}[0] Quay lại{C.R}\n")
+        mode_choice = ask("Chọn chế độ:").strip()
+        if mode_choice == "0":
+            return
+        if mode_choice == "1":
+            menu_custom_count_mode(packages_list)
+        elif mode_choice == "2":
+            menu_selective_mode(packages_list)
+        else:
+            msg_err("Lựa chọn không hợp lệ.")
+            time.sleep(1)
 
 def menu_change_id():
     clear_screen()
