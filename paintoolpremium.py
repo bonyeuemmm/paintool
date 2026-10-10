@@ -1878,17 +1878,19 @@ def authenticate():
             # ✓ Xác thực key thành công -> Kích hoạt (KHÔNG LƯU FILE)
             # Auto-save DISABLED per user request
             device_activated(profile, input_key)
-            extra = f" Hạn dùng đến: {LAST_LICENSE_EXPIRES}" if LAST_LICENSE_EXPIRES else ""
+            last_exp = globals().get('LAST_LICENSE_EXPIRES')
+            extra = f" Hạn dùng đến: {last_exp}" if last_exp else ""
             msg_ok(f"Xác thực Key thành công!{extra}")
             notify_bot_hwid_linked(input_key, hwid)
             time.sleep(1)
             return  # ← THOÁT NGAY KHÔNG LỰC VÒNG WHILE
         
         # ✗ Xác thực thất bại -> Hiển thị lỗi & chờ nhập lại
-        if LAST_LICENSE_REASON == "hwid_mismatch":
+        last_reason = globals().get('LAST_LICENSE_REASON')
+        if last_reason == "hwid_mismatch":
             fatal_exit(response_text)
         
-        if LAST_LICENSE_REASON in _TRANSIENT_REASONS:
+        if last_reason in _TRANSIENT_REASONS:
             note = f"{C.YEL}[!] {response_text}. Kiểm tra mạng rồi thử lại.{C.R}"
         else:
             note = f"{C.RED}[!] Thất bại: {response_text}.{C.R}"
@@ -4263,15 +4265,20 @@ def show_banner():
         return f"{dot(True)} {C.WHT}{text_on}{C.R}" if flag else f"{dot(False)} {C.GRY}Tắt{C.R}"
 
     root_txt = f"{dot(True)} {C.WHT}Root{C.R}" if rooted else f"{dot(False)} {C.RED}Không root{C.R}"
-    if WEBHOOK_URL:
+    
+    # Safe global access for Cython
+    webhook_url = globals().get('WEBHOOK_URL')
+    if webhook_url:
         webhook_txt = f"{dot(True)} {C.WHT}Đã cài{C.R}  {C.RED}●{C.YEL}●{C.GRN}●{C.R}"
     else:
         webhook_txt = f"{dot(None)} {C.GRY}Chưa cài{C.R}"
 
     print(box_top(w))
     print(box_row(f"{C.WHT}PAIN TOOL REJOIN VIP{C.R}", w, "center"))
-    print(box_row(f"{C.GRY}by{C.R} {C.YEL}PAIN GAMER{C.R} {C.GRY}·{C.R} {C.LPUR}{VERSION}{C.R}", w, "center"))
-    print(box_row(f"{C.CYN}{clip(DISCORD_LINK, inner)}{C.R}", w, "center"))
+    version = globals().get('VERSION', 'N/A')
+    print(box_row(f"{C.GRY}by{C.R} {C.YEL}PAIN GAMER{C.R} {C.GRY}·{C.R} {C.LPUR}{version}{C.R}", w, "center"))
+    discord_link = globals().get('DISCORD_LINK', '')
+    print(box_row(f"{C.CYN}{clip(discord_link, inner)}{C.R}", w, "center"))
     print(box_sep(w))
     print(box_row(f"{C.PUR}▸ THIẾT BỊ{C.R}", w))
     print(box_kv("Máy", clip(f"{info['model']} · Android {info['android']}", vw), w, lw))
@@ -4279,18 +4286,28 @@ def show_banner():
     print(box_kv("Pin / Root", f"{bat_col}{info['battery']}{C.R} {C.GRY}·{C.R} {root_txt}", w, lw))
     print(box_sep(w))
     print(box_row(f"{C.PUR}▸ TRẠNG THÁI{C.R}", w))
-    print(box_kv("Game", f"{dot(bool(TARGET_LINK) or None)} {C.WHT}{clip(SELECTED_GAME_NAME, vw - 2)}{C.R}", w, lw))
-    print(box_kv("Package", f"{dot(n_tabs > 0)} {C.WHT}{clip(PACKAGE_PREFIX, vw - 12)}{C.R} {C.GRY}({n_tabs} tab){C.R}", w, lw))
+    target_link = globals().get('TARGET_LINK')
+    selected_game = globals().get('SELECTED_GAME_NAME', 'Chưa chọn')
+    print(box_kv("Game", f"{dot(bool(target_link) or None)} {C.WHT}{clip(selected_game, vw - 2)}{C.R}", w, lw))
+    package_prefix = globals().get('PACKAGE_PREFIX', '')
+    print(box_kv("Package", f"{dot(n_tabs > 0)} {C.WHT}{clip(package_prefix, vw - 12)}{C.R} {C.GRY}({n_tabs} tab){C.R}", w, lw))
     print(box_kv("Rejoin", f"{dot(True)} {C.WHT}{clip(get_rejoin_mode_str(), vw - 2)}{C.R}", w, lw))
-    print(box_kv("Clear Data", on_off(AUTO_CLEAR_DATA, f"Bật (treo > {FREEZE_TIMEOUT_MIN}p)"), w, lw))
-    print(box_kv("Auto Backup", on_off(AUTO_BACKUP, f"Bật (mỗi {BACKUP_INTERVAL_MIN}p)"), w, lw))
+    auto_clear = globals().get('AUTO_CLEAR_DATA')
+    freeze_timeout = globals().get('FREEZE_TIMEOUT_MIN', 0)
+    print(box_kv("Clear Data", on_off(auto_clear, f"Bật (treo > {freeze_timeout}p)"), w, lw))
+    auto_backup = globals().get('AUTO_BACKUP')
+    backup_interval = globals().get('BACKUP_INTERVAL_MIN', 0)
+    print(box_kv("Auto Backup", on_off(auto_backup, f"Bật (mỗi {backup_interval}p)"), w, lw))
     print(box_kv("Webhook", webhook_txt, w, lw))
-    if SCHEDULE.get("start") or SCHEDULE.get("stop"):
-        print(box_kv("Hẹn giờ", f"{dot(True)} {C.WHT}Chạy {SCHEDULE.get('start') or '--:--'} · Dừng {SCHEDULE.get('stop') or '--:--'}{C.R}", w, lw))
-    if AUTO_RESTART_HOURS:
+    schedule = globals().get('SCHEDULE', {})
+    if schedule.get("start") or schedule.get("stop"):
+        print(box_kv("Hẹn giờ", f"{dot(True)} {C.WHT}Chạy {schedule.get('start') or '--:--'} · Dừng {schedule.get('stop') or '--:--'}{C.R}", w, lw))
+    auto_restart = globals().get('AUTO_RESTART_HOURS')
+    if auto_restart:
         print(box_kv("Auto Restart", f"{dot(True)} {C.WHT}{clip(auto_restart_label(), vw - 2)}{C.R}", w, lw))
     if update_available():
-        print(box_kv("Cập nhật", f"{dot(None)} {C.YEL}Có bản mới {UPDATE_INFO['latest']}{C.R}", w, lw))
+        update_info = globals().get('UPDATE_INFO', {})
+        print(box_kv("Cập nhật", f"{dot(None)} {C.YEL}Có bản mới {update_info.get('latest', 'N/A')}{C.R}", w, lw))
     print(box_sep(w))
     print(box_row(f"{C.PUR}▸ MENU{C.R}", w))
 
@@ -7486,13 +7503,11 @@ def apply_profiles_on_startup():
         print(f" {C.GRN}✓{C.R} Profile '{applied_game}' đã tải. (Để xem/chỉnh sửa: Menu 2 > Hồ sơ theo game)")
 
 def verify_and_start():
-    load_saved_config()
-    apply_profiles_on_startup()  # <-- Auto-load game profiles sau khi load config
-    restore_screen_if_needed()
-    authenticate()   # <-- Kiểm tra key chạy TRƯỚC, không qua được thì authenticate() không return
+    authenticate()   # <-- Xác thực key thẳng, vào menu ngay
 
     # Auto-init Cohere AI from environment variable
-    if GROQ_API_KEY:
+    groq_key = globals().get('GROQ_API_KEY')
+    if groq_key:
         init_groq()
 
     time.sleep(0.5)  # Small delay to stabilize terminal state after auth
@@ -7500,12 +7515,13 @@ def verify_and_start():
     while True:
         show_banner()
         choice = ask_main("Chọn chức năng [0-17]:").strip()
-        if choice not in MENU_NAMES:
+        menu_names = globals().get('MENU_NAMES', {})
+        if choice not in menu_names:
             invalid_choice(choice)
             continue
         if choice == "0":
             exit_tool()
-        announce_choice(choice, MENU_NAMES[choice])
+        announce_choice(choice, menu_names[choice])
         if choice == "1":
             start_tool()
         elif choice == "2":
