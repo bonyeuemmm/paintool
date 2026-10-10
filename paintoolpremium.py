@@ -5323,7 +5323,7 @@ def menu_autoexec_manager():
         
         # Giả sử current game từ CURRENT_GAME global
         if 'CURRENT_GAME' in globals():
-            current_game = CURRENT_GAME
+            current_game = globals().get('CURRENT_GAME')
             print(f"Game hiện tại: {current_game}")
             
             # Disable tất cả
