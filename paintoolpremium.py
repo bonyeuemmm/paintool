@@ -4410,7 +4410,7 @@ def start_tool():
             if VISION_AI_ENABLED and not stop_start:
                 vision_screen_check(packages)
 
-if not stop_start and (time.time() - last_ram_check) >= 30:
+            if not stop_start and (time.time() - last_ram_check) >= 30:
                 last_ram_check = time.time()
                 check_low_ram(packages)
 
