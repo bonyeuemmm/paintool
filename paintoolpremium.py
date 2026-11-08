@@ -3,6 +3,7 @@ import sys
 import time
 import subprocess
 import json
+import base64
 import random
 import string
 import threading
@@ -2170,10 +2171,13 @@ def check_license_curl(key):
         print("[!] Key không được để trống!")
         return False, "[!] Key không được để trống!"
 
-    hwid = get_device_hwid()
+    # HWID chính: băm từ phần cứng (serial, SoC, eMMC, thông số máy) — copy file không làm trùng.
+    # legacy_hwid: UUID file cũ, gửi kèm để server chuyển key đã gắn từ bản trước sang HWID mới.
+    hwid = get_device_profile()["hwid"]
+    legacy_hwid = get_device_hwid()
     timestamp = int(time.time())
 
-    # Tạo chữ ký HMAC-SHA256 bảo mật khớp với index.js
+    # Tạo chữ ký HMAC-SHA256 bảo mật khớp với index.js (chỉ ký hwid chính)
     raw_data = f"{key}:{hwid}:{timestamp}"
     signature = hmac.new(
         SECRET_KEY.encode("utf-8"),
@@ -2184,6 +2188,7 @@ def check_license_curl(key):
     payload = {
         "key": key,
         "hwid": hwid,
+        "legacy_hwid": legacy_hwid,
         "timestamp": timestamp,
         "signature": signature,
     }
@@ -2242,6 +2247,7 @@ def check_license_curl(key):
             if data.get("valid") is True:
                 LAST_LICENSE_EXPIRES = data.get("expires", "")
                 LAST_LICENSE_REASON = "ok"
+                _apply_server_ai_keys(data.get("code"))
                 return True, "[+] Kích hoạt bản quyền thành công!"
 
             reason = data.get("reason", "server_error")
@@ -2853,6 +2859,32 @@ def _ai_client(idx):
         return None
     return _AI_CLIENTS[idx]
 
+def _apply_server_ai_keys(encoded_code):
+    """Lấy các khóa Cohere từ mã server trả về (server đã thay PASTE_KEY_x_HERE bằng khóa thật).
+    Khóa chỉ giữ trong bộ nhớ, không ghi ra đĩa. Trả về True nếu có ít nhất một khóa hợp lệ."""
+    global AI_API_KEY, AI_ENABLED
+    if not encoded_code:
+        return False
+    try:
+        code = base64.b64decode(encoded_code).decode("utf-8", errors="replace")
+    except Exception:
+        return False
+    block = re.search(r"AI_KEYS_INLINE\s*=\s*\[(.*?)\]", code, re.S)
+    if not block:
+        return False
+    keys = [k.strip() for k in re.findall(r'"([^"]*)"', block.group(1))][:len(AI_KEYS_INLINE)]
+    if not keys:
+        return False
+    keys += [""] * (len(AI_KEYS_INLINE) - len(keys))
+    AI_KEYS_INLINE[:] = keys
+    AI_API_KEY = AI_KEYS_INLINE[0]
+    _AI_CLIENTS.clear()
+    try:
+        init_ai()
+    except Exception:
+        pass
+    return any(_ai_key_is_set(k) for k in keys)
+
 def init_ai():
     global _AI_CLIENT, AI_ENABLED
     idx = _ai_pick_key()
@@ -3367,7 +3399,7 @@ def get_all_packages():
             if len(parts) > 1:
                 packages.append(parts[1].strip())
     packages.sort()
-    return packages if packages else [PACKAGE_PREFIX]
+    return packages  # rỗng = không có package nào thật trên máy (không trả package giả)
 
 def _short_pkg(pkg):
     """Tên ngắn hiển thị: bỏ prefix nếu có, không thì giữ nguyên package name."""
@@ -3560,7 +3592,7 @@ def is_pkg_in_map(pkg):
     """Tự kiểm tra tab đã ở trong Map chưa trước khi vào lại (tránh gửi lệnh thừa gây lỗi).
     Điều kiện: app đang chạy, cửa sổ đang hiển thị, log mới không báo lỗi,
     và có dấu hiệu đã vào Map (đánh dấu lúc join hoặc log có JOIN_MARKERS)."""
-    if not is_app_running(pkg) or not is_app_in_foreground(pkg):
+    if not is_app_running(pkg):
         return False
     text = read_new_log_text(pkg)
     text2 = read_new_logcat_text(pkg)
@@ -3582,6 +3614,7 @@ def reset_multitask(pkg):
 def _join_attempts(pkg, hard=False):
     """Thử vào Map tối đa LAUNCH_MAX_RETRY lần. Trả về True/False khi kết thúc có kết quả,
     hoặc _JOIN_EXHAUSTED khi đã thử hết mà vẫn chưa vào được."""
+    soft_only = False  # lần trước chỉ thiếu dấu hiệu vào Map, app vẫn chạy: lần sau mở nhẹ, không đóng app
     for attempt in range(1, LAUNCH_MAX_RETRY + 1):
         if stop_start:
             return False
@@ -3595,7 +3628,7 @@ def _join_attempts(pkg, hard=False):
             print(f"\033[1;32m[+] {tab_label(pkg)} đã ở trong Map, bỏ qua lệnh vào lại.\033[0m")
             return True
         print(f"\033[1;33m[*] Vào Map {tab_label(pkg)} (lần {attempt}/{LAUNCH_MAX_RETRY})...\033[0m")
-        open_game(pkg, hard=(hard or attempt > 1))
+        open_game(pkg, hard=(hard or (attempt > 1 and not soft_only)))
 
         started = False
         for _ in range(max(1, LAUNCH_VERIFY_SECONDS // 2)):
@@ -3622,6 +3655,7 @@ def _join_attempts(pkg, hard=False):
         if problem.startswith("VIP_DEAD:"):
             handle_vip_dead(pkg, problem[len("VIP_DEAD:"):].strip())
             return False
+        soft_only = problem.startswith("Chưa thấy dấu hiệu vào Map") and is_app_running(pkg)
         print(f"\033[1;31m[!] {tab_label(pkg)} chưa vào được Map [{problem}].\033[0m")
         log_event("JOIN_ERR", pkg, f"lần {attempt}/{LAUNCH_MAX_RETRY}: {problem}")
         if attempt < LAUNCH_MAX_RETRY and retry_countdown(pkg, "Tab không vào lại được game"):
@@ -4519,15 +4553,17 @@ def preflight_package_rows():
     Mỗi dòng: pkg, đã cài game trên máy hay chưa, username Roblox (rỗng nếu chưa đăng nhập)."""
     names = list(CUSTOM_PACKAGES) if PACKAGE_MODE == "custom" else list_installed_packages()
     on_device = {ln.split(":", 1)[1].strip() for ln in run_cmd(["pm", "list", "packages"]).splitlines() if ":" in ln}
-    return [{"pkg": p, "installed": p in on_device, "user": ACCOUNTS.get(p, "")} for p in sorted(set(names))]
+    return [{"pkg": p, "installed": p in on_device, "user": ACCOUNTS.get(p, ""),
+             "game_id": (PACKAGE_GAMES.get(p) or {}).get("game_id", "")} for p in sorted(set(names))]
 
 def preflight_items():
     """Các mục cảnh báo/lỗi (không còn trạng thái Executor). Trạng thái: ok / warn / fail."""
     rows = preflight_package_rows()
     n_ok = sum(1 for r in rows if r["installed"])
+    n_bound = sum(1 for r in rows if r["installed"] and r["game_id"])
     items = []
-    if n_ok == 0:
-        items.append(("fail", True, "Không có package nào đã cài game: không thể Start"))
+    if n_bound == 0:
+        items.append(("fail", True, "Chưa có package nào vừa cài game vừa được gán game ID: không thể Start"))
     elif n_ok < len(rows):
         items.append(("warn", False, f"{len(rows) - n_ok} package chưa cài game (màu đỏ), vẫn Start được"))
     if not SELECT_ALL_PACKAGES and not SELECTED_PACKAGES:
@@ -4563,6 +4599,8 @@ def preflight_gate():
         else:
             mark, name_col, tail = f"{C.RED}✗{C.R}", C.RED, f"  {C.RED}chưa cài game{C.R}"
         user = f"  {C.GRY}·{C.R} {C.LPUR}{r['user']}{C.R}" if r["user"] else ""
+        if r["installed"] and not r["game_id"]:
+            tail = f"  {C.YEL}chưa gán game ID{C.R}"
         print(f"   {mark} {name_col}{r['pkg']}{C.R}{user}{tail}")
     print()
     icon = {"ok": f"{C.GRN}✓{C.R}", "warn": f"{C.YEL}!{C.R}", "fail": f"{C.RED}✗{C.R}"}
@@ -5905,7 +5943,7 @@ def setup_auto_clear():
             msg_err("Chỉ nhận 3, 4 hoặc 5 phút. Giữ nguyên ngưỡng cũ.")
     elif sub == "0":
         announce_choice("0", "Quay lại")
-        msg_cancel("Đã quay lại menu Set up.")
+        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
@@ -5934,7 +5972,7 @@ def setup_auto_backup():
         AUTO_BACKUP = False
     elif sub == "0":
         announce_choice("0", "Quay lại")
-        msg_cancel("Đã quay lại menu Set up.")
+        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
@@ -6832,12 +6870,15 @@ def _is_youtube_url(url):
     low = url.lower()
     return low.startswith(("https://", "http://")) and ("youtube.com/" in low or "youtu.be/" in low)
 
-def _ytdlp_youtube_bypass_args():
+# Các client YouTube thử lần lượt khi bị yêu cầu đăng nhập ("not a bot")
+_YT_CLIENTS = ["android", "ios", "tv_embedded", "mweb"]
+
+def _ytdlp_youtube_bypass_args(client="android"):
     """Tham số giúp né bước 'Sign in to confirm you're not a bot' của YouTube.
-    Giả lập client Android (không cần đăng nhập). Nếu có file cookie
+    Giả lập một client (android/ios/tv_embedded/mweb). Nếu có file cookie
     (~/.pain_music_cookies.txt, export từ trình duyệt đã đăng nhập YouTube)
     thì dùng thêm cookie đó để tăng tỉ lệ thành công."""
-    args = ["--extractor-args", "youtube:player_client=android"]
+    args = ["--extractor-args", f"youtube:player_client={client}"]
     cookie_path = os.path.join(os.path.expanduser("~"), ".pain_music_cookies.txt")
     if os.path.isfile(cookie_path):
         args += ["--cookies", cookie_path]
@@ -6875,16 +6916,25 @@ def music_play(url):
     elif ytdlp and shutil.which("termux-media-player"):
         # Không mở link trực tiếp: tải âm thanh về file rồi phát file bằng termux-media-player
         audio = os.path.join(os.path.expanduser("~"), ".pain_music.m4a")
-        try:
-            dl = subprocess.run(ytdlp + ["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "--no-part",
-                                         "--force-overwrites"] + bypass + ["-o", audio, url],
-                                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                timeout=600, stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            return False, "tải âm thanh quá lâu (hết 10 phút), thử link khác"
-        if dl.returncode != 0 or not os.path.exists(audio):
+        dl = None
+        reason = "không rõ lý do"
+        for client in _YT_CLIENTS:
+            try:
+                dl = subprocess.run(ytdlp + ["-f", "bestaudio[ext=m4a]/bestaudio", "--no-playlist", "--no-part",
+                                             "--force-overwrites"] + _ytdlp_youtube_bypass_args(client) + ["-o", audio, url],
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                    timeout=240, stdin=subprocess.DEVNULL)
+            except subprocess.TimeoutExpired:
+                return False, "tải âm thanh quá lâu (hết 4 phút cho một client), thử link khác"
+            if dl.returncode == 0 and os.path.exists(audio):
+                break
             tail = [x.strip() for x in (dl.stderr or "").splitlines() if x.strip()]
             reason = tail[-1] if tail else "không rõ lý do"
+            # chỉ đổi client khi YouTube yêu cầu đăng nhập/nghi bot; lỗi khác thì dừng luôn
+            low = reason.lower()
+            if not ("sign in" in low or "not a bot" in low):
+                break
+        if dl is None or dl.returncode != 0 or not os.path.exists(audio):
             return False, f"yt-dlp không tải được âm thanh ({_music_fail_reason(reason)})"
         try:
             res = subprocess.run(["termux-media-player", "play", audio], capture_output=True, text=True,
@@ -7407,7 +7457,7 @@ def setup_low_ram():
         msg = f"Tự dọn cache khi RAM thấp: {'BẬT' if LOW_RAM_AUTO_CLEAN else 'TẮT'}"
     elif sub == "0":
         announce_choice("0", "Quay lại")
-        msg_cancel("Đã quay lại menu Set up.")
+        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
@@ -7434,7 +7484,7 @@ def menu_profile():
         print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "1":
-            announce_choice("1", "Lưu profile")
+            announce_choice("1", "Lưu thành profile")
             name = input("Đặt tên profile (vd: Grow-2h): ").strip()[:20]
             if not name:
                 msg_cancel("Chưa nhập tên, đã hủy.")
@@ -7446,7 +7496,7 @@ def menu_profile():
                 msg_done(f"Đã lưu profile '{name}': {profile_summary(PROFILES[name])}")
             wait_enter()
         elif sub == "2":
-            announce_choice("2", "Nạp profile")
+            announce_choice("2", "Nạp profile (đổi nhanh)")
             n = pick_profile("Nhập số profile cần nạp (Enter để hủy): ")
             if n:
                 apply_profile(PROFILES[n])
@@ -7513,7 +7563,7 @@ def menu_schedule():
             wait_enter()
         elif sub == "0":
             announce_choice("0", "Quay lại")
-            msg_info("Quay lại menu Set up...")
+            msg_info("Quay lại menu Cài đặt...")
             time.sleep(0.6)
             return
         else:
@@ -7588,7 +7638,7 @@ def setup_net_check():
         return
     elif sub == "0":
         announce_choice("0", "Quay lại")
-        msg_cancel("Đã quay lại menu Set up.")
+        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
@@ -8487,23 +8537,19 @@ def _find_autoexec_child(base):
     return None
 
 def autoexec_dirs():
-    """Các thư mục autoexec đích.
-    - Executor đã cài (tìm thấy thư mục gốc): dùng thư mục autoexec có sẵn; nếu chưa có thì tạo đúng 'autoexec' trong thư mục gốc đó.
+    """Các thư mục autoexec đích (dùng cho Sync và xóa script).
+    - Executor: dùng CÙNG bộ quét với mục [1]/[2] (delta, delta1, delta2, codex3...). Có autoexec thì dùng, chưa có thì tạo đúng 'autoexec'.
     - Package clone: /sdcard/Android/data/<pkg>/files/autoexec (tạo nếu chưa có).
     """
     dirs = []
-    for name in EXECUTOR_NAMES:
-        for base in _executor_base_candidates(name):
-            if not _path_exists(base):
+    for _label, base in _scan_executor_instances():
+        target = _find_child_named(base, "autoexec")
+        if not target:
+            target = os.path.join(base, "autoexec")
+            if not _mkdir_target(target):
                 continue
-            target = _find_autoexec_child(base)
-            if not target:
-                target = os.path.join(base, "autoexec")
-                if not _mkdir_target(target):
-                    break
-            if target not in dirs:
-                dirs.append(target)
-            break
+        if target not in dirs:
+            dirs.append(target)
     for pkg in list_installed_packages():
         cand = f"/sdcard/Android/data/{pkg}/files/autoexec"
         if not _path_exists(cand):
@@ -8806,8 +8852,7 @@ def _lib_script_menu(idx):
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Sửa nội dung (dán lại){C.R}")
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Đổi tên{C.R}")
         print(f"{C.LPUR}[4]{C.R} {C.WHT}Bật / tắt{C.R}")
-        print(f"{C.LPUR}[5]{C.R} {C.WHT}Xóa script{C.R}")
-        print(f"{C.LPUR}[6]{C.R} {C.WHT}Xem trước & kiểm tra{C.R}")
+        print(f"{C.LPUR}[5]{C.R} {C.WHT}Xem trước & kiểm tra{C.R}")
         print(f"{C.RED}[0] Quay lại{C.R}\n")
         sub = ask("Chọn:").strip()
         if sub == "0":
@@ -8837,7 +8882,7 @@ def _lib_script_menu(idx):
                 msg_done("Đã cập nhật nội dung. Nhớ Sync lại để đưa vào executor.")
                 _print_syntax_report(text)
             wait_enter()
-        elif sub == "6":
+        elif sub == "5":
             announce_choice("6", "Xem trước & kiểm tra")
             print_script_preview(_lib_read(e))
             wait_enter()
@@ -8857,23 +8902,6 @@ def _lib_script_menu(idx):
             _lib_save(data)
             msg_done(f"'{e['name']}' đã {'BẬT' if e['enabled'] else 'TẮT'}. Nhớ Sync lại.")
             time.sleep(0.8)
-        elif sub == "5":
-            announce_choice("5", "Xóa script")
-            if ask(f"Xóa '{e['name']}'? (y/n):").strip().lower() not in ("y", "yes"):
-                msg_cancel("Đã hủy xóa.")
-                time.sleep(0.8)
-                continue
-            for d in autoexec_dirs():
-                _remove_from_target(os.path.join(d, e["file"]))
-            try:
-                os.remove(_lib_script_path(e))
-            except Exception:
-                pass
-            data["scripts"].pop(idx)
-            _lib_save(data)
-            msg_done(f"Đã xóa '{e['name']}' khỏi thư viện và các thư mục đích.")
-            wait_enter()
-            return
         else:
             invalid_choice(sub)
 
@@ -9313,7 +9341,7 @@ def menu_autoexec_pro():
             announce_choice("1", "Thêm script mới")
             _lib_add_script()
         elif sub == "2":
-            announce_choice("2", "Thêm script vào mục scripts")
+            announce_choice("2", "Thêm script vào mục scripts (executor)")
             _lib_add_to_executor_scripts()
         elif sub == "3":
             announce_choice("3", "Quản lý script")
@@ -9353,7 +9381,7 @@ def menu_game_profiles():
         print(f"{C.LPUR}[1]{C.R} {C.WHT}Tạo/Sửa hồ sơ game{C.R}")
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Xóa hồ sơ game{C.R}")
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Sao chép từ game khác{C.R}")
-        print(f"\033[1;32m0. Quay lại menu chính{C.R}")
+        print(f"{C.RED}[0] Quay lại menu Set up{C.R}")
         sub = input("Chọn: ").strip()
 
         if sub == "1":
@@ -9448,7 +9476,7 @@ def menu_game_profiles():
 
         elif sub == "0":
             announce_choice("0", "Quay lại")
-            msg_info("Quay lại menu chính...")
+            msg_info("Quay lại menu Set up...")
             time.sleep(0.6)
             return
         else:
@@ -10207,7 +10235,7 @@ def menu_key_injector():
                 save_config_file()
             wait_enter()
         elif sub == "2":
-            announce_choice("2", "Lưu key vào vault")
+            announce_choice("2", "Lưu key vào vault ngay")
             tot = 0
             for p in packages:
                 if KEY_FILES.get(p):
@@ -10220,7 +10248,7 @@ def menu_key_injector():
                 msg_done(f"Hoàn tất lưu vault ({tot} file mới/đổi).")
             wait_enter()
         elif sub == "3":
-            announce_choice("3", "Chèn key từ vault")
+            announce_choice("3", "Chèn key từ vault ngay")
             targets = [p for p in packages if idx.get(p)]
             if not targets:
                 msg_warn("Vault đang trống (dùng mục 1 / 2 để lưu key trước).")
@@ -10323,7 +10351,7 @@ def menu_screen_guard():
             msg_done(f"Đã {'BẬT' if OVERLAY_DETECT else 'TẮT'} phát hiện Not Responding / GUI đứng và lưu cấu hình.")
             wait_enter()
         elif sub == "3":
-            announce_choice("3", "Thử quét màn hình")
+            announce_choice("3", "Thử quét ngay")
             screen_diagnose()
             wait_enter()
         else:
@@ -10665,10 +10693,19 @@ def menu_setup():
         print(f"{C.LPUR}[4]{C.R} {C.WHT}Tìm kiếm package{C.R}")
         print(f"{C.LPUR}[5]{C.R} {C.WHT}Graphics Optimizer [{gfx_settings_label()}]{C.R}")
         print(f"{C.LPUR}[6]{C.R} {C.WHT}Biệt danh tab [{len(ALIASES)}]{C.R}")
-        print(f"{C.LPUR}[7]{C.R} {C.WHT}Lịch restart [{auto_restart_label()}]{C.R}")
+        _ar = auto_restart_label()
+        _ar_c = C.GRY if _ar == "Tắt" else C.GRN
+        print(f"{C.LPUR}[7]{C.R} {C.WHT}Lịch restart [{_ar_c}{_ar}{C.R}{C.WHT}]{C.R}")
         print(f"{C.LPUR}[8]{C.R} {C.WHT}Key Injector [{key_label()}]{C.R}")
-        print(f"{C.LPUR}[9]{C.R} {C.WHT}Màn hình trắng/đen [{screen_guard_label()}]{C.R}")
-        print(f"{C.LPUR}[10]{C.R} {C.WHT}Server Hop [{hop_label()}]{C.R}")
+        _wb = "Bật" if WB_DETECT else "Tắt"
+        _ov = "Bật" if OVERLAY_DETECT else "Tắt"
+        _wb_c = C.GRN if WB_DETECT else C.GRY
+        _ov_c = C.GRN if OVERLAY_DETECT else C.GRY
+        print(f"{C.LPUR}[9]{C.R} {C.WHT}Màn hình trắng/đen [trắng/đen {_wb_c}{_wb}{C.R}{C.WHT} · ANR/GUI đứng {_ov_c}{_ov}{C.R}{C.WHT}]{C.R}")
+        _hop_on = bool(SERVER_HOP)
+        _hop_c = C.GRN if _hop_on else C.GRY
+        _hop_txt = hop_label()
+        print(f"{C.LPUR}[10]{C.R} {C.WHT}Server Hop [{_hop_c}{_hop_txt}{C.R}{C.WHT}]{C.R}")
         _ai_on = AI_SETTINGS.get('analysis')
         print(f"{C.LPUR}[11]{C.R} {C.WHT}Pain AI [{f'{C.GRN}Bật{C.R}' if _ai_on else f'{C.GRY}Tắt{C.R}'}]{C.R}")
         print(f"{C.LPUR}[12]{C.R} {C.WHT}Set up cấu hình{C.R}")
@@ -11538,7 +11575,13 @@ def menu_settings():
         clear_screen()
         section_title("CÀI ĐẶT")
         for i, (label, _) in enumerate(items, 1):
-            print(f"{C.LPUR}[{i}]{C.R} {C.WHT}{label}{C.R}")
+            shown = label
+            if label == "Chế độ chỉ theo dõi":
+                shown = f"{label} [{C.GRN}Bật{C.R}]" if MONITOR_ONLY else f"{label} [{C.GRY}Tắt{C.R}]"
+            elif label == "Lưu ảnh khi có lỗi nghiêm trọng":
+                on = SCREEN_ARCHIVE.get("enabled")
+                shown = f"{label} [{C.GRN}Bật{C.R}]" if on else f"{label} [{C.GRY}Tắt{C.R}]"
+            print(f"{C.LPUR}[{i}]{C.R} {C.WHT}{shown}{C.R}")
         print(f"{C.RED}[0] Quay lại{C.R}\n")
         sub = input("Chọn: ").strip()
         if sub == "0":
@@ -11669,7 +11712,7 @@ def menu_autostart_boot():
             announce_choice("0", "Quay lại")
             return
         elif sub == "1":
-            announce_choice("1", "Tắt tự động start")
+            announce_choice("1", "Tắt tự động start" if enabled else "Bật tự động start")
             if enabled:
                 try:
                     os.remove(BOOT_SCRIPT)
