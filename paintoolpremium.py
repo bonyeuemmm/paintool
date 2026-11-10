@@ -1748,7 +1748,7 @@ def with_spinner(label, func, *args, **kwargs):
                 sys.stdout.flush()
                 box["e"] = Exception(f"Lỗi hệ thống: Timeout sau {max_timeout}s")
                 break
-            sys.stdout.write(f"\r {C.LPUR}{frames[i % len(frames)]}{C.R} {C.WHT}{label}{C.R} {C.GRY}({int(elapsed)}s){C.R}   ")
+            sys.stdout.write(f"\r {C.YEL}{frames[i % len(frames)]}{C.R} {C.YEL}{label}{C.R} {C.GRY}({int(elapsed)}s){C.R}   ")
             sys.stdout.flush()
             i += 1
             time.sleep(0.1)
@@ -2311,29 +2311,42 @@ def authenticate():
     if problem:
         fatal_exit(problem)
     
-    # ==================== BƯỚC 1: TỰ ĐỘNG LOAD KEY ĐÃ LƯU ====================
+    # ==================== HIỂN THỊ MÀN HÌNH NHẬP KEY TRƯỚC ====================
     saved_key = _load_license_key(hwid)
+    license_screen(hwid, None)
+
+    # ==================== TRẠNG THÁI KIỂM TRA: HIỆN BÊN DƯỚI MÀN HÌNH ====================
+    check_update_on_launch(hwid)
+    st_line = update_status_line()
+    if st_line:
+        print(f" {st_line}")
+
+    # ==================== BƯỚC 1: TỰ ĐỘNG LOAD KEY ĐÃ LƯU ====================
     if saved_key:
         is_valid, _ = with_spinner("Đang xác thực key đã lưu", check_license_curl, saved_key)
         if is_valid:
             device_activated(profile, saved_key)
             _LICENSE_GUARD["key"] = saved_key
             _LICENSE_GUARD["last"] = time.time()
+            print(f" {C.GRN}✓ Key đã lưu còn hiệu lực.{C.R}")
             return  # Key còn hợp lệ, bỏ qua màn hình nhập
-        else:
-            # Key hết hạn hoặc bị thu hồi → xóa file, yêu cầu nhập lại
-            try:
-                os.remove(LICENSE_FILE)
-            except Exception:
-                pass
+        # Key hết hạn hoặc bị thu hồi → xóa file, báo người dùng nhập lại
+        try:
+            os.remove(LICENSE_FILE)
+        except Exception:
+            pass
+        print(f" {C.YEL}[!] Key đã lưu không còn hiệu lực. Vui lòng nhập key mới.{C.R}")
 
     # ==================== BƯỚC 2: NHẬP KEY THỦ CÔNG ====================
-    check_update_on_launch(hwid)
+    print()
     note = None
+    redraw = False  # lần đầu không vẽ lại màn hình, để 2 dòng trạng thái vẫn hiển thị bên dưới
     while True:
-        refresh_update_info()  # chỉ gọi mạng khi cache hết hạn hoặc lần trước lỗi
-        license_screen(hwid, note)
-        note = None
+        if redraw:
+            refresh_update_info()  # chỉ gọi mạng khi cache hết hạn hoặc lần trước lỗi
+            license_screen(hwid, note)
+            note = None
+        redraw = True
         input_key = ask("Nhập Key:").strip()
 
         if input_key.lower() in ("exit", "0"):
@@ -5832,15 +5845,13 @@ def show_banner():
         ("5", "Webhook URL"),
         ("6", "Xóa cache"),
         ("7", "Import auto execute"),
-        ("8", "Mở tab clone"),
-        ("9", "Send Text"),
-        ("10", "Backup"),
-        ("11", "Cookie Roblox"),
-        ("12", "Xem log"),
-        ("13", "Gán executor"),
-        ("14", "Anti-AFK"),
-        ("15", "Dừng khẩn cấp"),
-        ("16", "Cài đặt"),
+        ("8", "Send Text"),
+        ("9", "Backup"),
+        ("10", "Cookie Roblox"),
+        ("11", "Xem log"),
+        ("12", "Gán executor"),
+        ("13", "Anti-AFK"),
+        ("14", "Cài đặt"),
         ("0", "Exit"),
     ]
 
@@ -8843,15 +8854,13 @@ MENU_NAMES = {
     "5": "Webhook URL",
     "6": "Xóa cache", 
     "7": "Import Auto Execute", 
-    "8": "Mở tab clone", 
-    "9": "Gửi tin nhắn",
-    "10": "Backup", 
-    "11": "Cookie Roblox", 
-    "12": "Xem log",
-    "13": "Gán executor",
-    "14": "Anti-AFK",
-    "15": "Dừng khẩn cấp",
-    "16": "Cài đặt",
+    "8": "Gửi tin nhắn",
+    "9": "Backup", 
+    "10": "Cookie Roblox", 
+    "11": "Xem log",
+    "12": "Gán executor",
+    "13": "Anti-AFK",
+    "14": "Cài đặt",
     "0": "Exit",
 }
 
@@ -10661,9 +10670,8 @@ HELP_PAGES = [
         "Gõ s khi đang giám sát để xem bảng trạng thái.",
     ]),
     ("Các mục hay dùng", [
-        "14  Anti-AFK: gửi thao tác nhẹ định kỳ (cần root).",
-        "15  Dừng khẩn cấp: dừng ngay các tab đang chạy.",
-        "12  Xem log: lọc theo mức độ, tra mã lỗi, xuất log theo ngày.",
+        "13  Anti-AFK: gửi thao tác nhẹ định kỳ (cần root).",
+        "11  Xem log: lọc theo mức độ, tra mã lỗi, xuất log theo ngày.",
     ]),
 ]
 
@@ -10872,7 +10880,7 @@ def verify_and_start():
     while True:
         license_guard_tick()
         show_banner()
-        choice = ask_main("Chọn chức năng [0-16]:").strip()
+        choice = ask_main("Chọn chức năng [0-14]:").strip()
         if choice.lower() == "help":
             show_help()
             continue
@@ -10897,22 +10905,18 @@ def verify_and_start():
         elif choice == "7":
             menu_autoexec_pro()
         elif choice == "8":
-            menu_open_clones()
-        elif choice == "9":
             handle_send_text()
-        elif choice == "10":
+        elif choice == "9":
             backup_menu()
-        elif choice == "11":
+        elif choice == "10":
             menu_cookie_roblox()
-        elif choice == "12":
+        elif choice == "11":
             menu_view_log()
-        elif choice == "13":
+        elif choice == "12":
             menu_executor_binding()
-        elif choice == "14":
+        elif choice == "13":
             menu_anti_afk()
-        elif choice == "15":
-            emergency_stop()
-        elif choice == "16":
+        elif choice == "14":
             menu_settings()
 
 
