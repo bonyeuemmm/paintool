@@ -3406,8 +3406,8 @@ def is_app_running(pkg):
     # package dài (vd com.roblox.client, com.roblox.clone1). Kiểm tra cmdline đầy đủ trước.
     if sh(f"pidof {pkg}", timeout=3):
         return True
-    pat = re.escape(pkg) + r"(:.*)?"
-    out = sh(f"cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\\0' '\\n' | grep -qxE {shlex.quote(pat)} && echo 1",
+    # Chỉ tiến trình chính (đúng tên package). Tiến trình con "pkg:..." còn sót sau khi đa nhiệm không tính là tab đang chạy.
+    out = sh(f"cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\\0' '\\n' | grep -qx {shlex.quote(pkg)} && echo 1",
              timeout=6)
     if "1" in (out or ""):
         return True
@@ -3935,6 +3935,32 @@ def handle_vip_dead(pkg, problem):
     else:
         action = "Đây là link/ID chính ở mục Set up > Chọn game. Hãy đổi sang link VIP server mới."
     notify_async("critical", "VIP Server đã hết hạn", f"`{pkg}`: {problem}", pkg=pkg, reason=problem, action=action)
+
+MAP_CHECK_SEC = 60      # cứ 60 giây kiểm tra một lần
+MAP_GRACE_SEC = 120     # sau khi mở tab, chờ tối thiểu 2 phút mới kiểm tra
+LAST_MAP_CHECK = {}
+
+def map_watch_tick(packages):
+    """Tự kiểm tra package đang chạy nhưng chưa vào map.
+    Lần 1: vào lại nhẹ (không tắt đa nhiệm). Nếu lần sau vẫn chưa vào map thì tắt đa nhiệm và thử lại."""
+    if stop_start:
+        return
+    now = time.time()
+    for pkg in packages:
+        if pkg in TAMPER_HOLD:
+            continue
+        if now - LAST_MAP_CHECK.get(pkg, 0) < MAP_CHECK_SEC:
+            continue
+        if now - LAUNCHED_AT.get(pkg, 0) < MAP_GRACE_SEC:
+            continue
+        LAST_MAP_CHECK[pkg] = now
+        if not is_app_running(pkg):
+            continue  # tab đã tắt: detect_problem sẽ mở lại
+        if JOIN_CONFIRMED.get(pkg, 0) > LAUNCHED_AT.get(pkg, 0):
+            continue  # đã xác nhận vào map
+        log_event("MAP_CHECK", pkg, "Chưa vào map: tự động vào lại (lần sau sẽ tắt đa nhiệm nếu vẫn chưa vào)")
+        print(f"\033[1;33m[*] {tab_label(pkg)}: chưa thấy vào map, tự động thử lại...\033[0m")
+        recover_tab(pkg, "Chưa vào Map (tự kiểm tra)")
 
 def _tamper_alert(pkg):
     TAMPER_HOLD[pkg] = time.time()
@@ -4535,8 +4561,13 @@ def preflight_package_rows():
     Mỗi dòng: pkg, đã cài game trên máy hay chưa, username Roblox (rỗng nếu chưa đăng nhập)."""
     names = list(CUSTOM_PACKAGES) if PACKAGE_MODE == "custom" else list_installed_packages()
     on_device = {ln.split(":", 1)[1].strip() for ln in run_cmd(["pm", "list", "packages"]).splitlines() if ":" in ln}
-    return [{"pkg": p, "installed": p in on_device, "user": ACCOUNTS.get(p, ""),
-             "game_id": (PACKAGE_GAMES.get(p) or {}).get("game_id", "")} for p in sorted(set(names))]
+    rows = []
+    for p in sorted(set(names)):
+        info = PACKAGE_GAMES.get(p) or {}
+        rows.append({"pkg": p, "installed": p in on_device, "user": ACCOUNTS.get(p, ""),
+                     "game_id": info.get("game_id", ""),
+                     "game": info.get("game_name") or (SELECTED_GAME_NAME if info.get("game_id") else "")})
+    return rows
 
 def preflight_items():
     """Các mục cảnh báo/lỗi (không còn trạng thái Executor). Trạng thái: ok / warn / fail."""
@@ -4565,10 +4596,8 @@ def preflight_gate():
 
     model = (f"Custom List · {len(CUSTOM_PACKAGES)} package" if PACKAGE_MODE == "custom"
              else f"Prefix · {PACKAGE_PREFIX}*")
-    game = SELECTED_GAME_NAME or "Chưa chọn (chỉ mở app, không vào Map)"
     hook = f"{C.GRN}● Đã cài{C.R}" if webhook_active() else f"{C.GRY}○ Chưa cài{C.R}"
     print(f" {C.GRY}Model     {C.R}{C.WHT}{model}{C.R}")
-    print(f" {C.GRY}Game      {C.R}{C.WHT}{game}{C.R}")
     print(f" {C.GRY}Rejoin    {C.R}{C.WHT}{get_rejoin_mode_str()}{C.R}")
     print(f" {C.GRY}Webhook   {C.R}{hook}")
     print()
@@ -4577,13 +4606,18 @@ def preflight_gate():
         print(f"   {C.RED}Không có package nào trong model này{C.R}")
     for r in rows:
         if r["installed"]:
-            mark, name_col, tail = f"{C.GRN}✓{C.R}", C.WHT, ""
+            mark, name_col = f"{C.GRN}✓{C.R}", C.WHT
         else:
-            mark, name_col, tail = f"{C.RED}✗{C.R}", C.RED, f"  {C.RED}chưa cài game{C.R}"
-        user = f"  {C.GRY}·{C.R} {C.LPUR}{r['user']}{C.R}" if r["user"] else ""
-        if r["installed"] and not r["game_id"]:
-            tail = f"  {C.YEL}chưa gán game ID{C.R}"
-        print(f"   {mark} {name_col}{r['pkg']}{C.R}{user}{tail}")
+            mark, name_col = f"{C.RED}✗{C.R}", C.RED
+        pkg_col = f"{name_col}{r['pkg'].ljust(30)}{C.R}"
+        user_col = f"{C.LPUR}{r['user']}{C.R}" if r["user"] else ""
+        if not r["installed"]:
+            game_col = f"{C.RED}chưa cài game{C.R}"
+        elif not r["game_id"]:
+            game_col = f"{C.YEL}chưa gán game ID{C.R}"
+        else:
+            game_col = f"{C.GRY}{r['game'] or 'game ' + str(r['game_id'])}{C.R}"
+        print(f"   {mark} {pkg_col} {user_col.ljust(22) if user_col else ' ' * 22} {game_col}")
     print()
     icon = {"ok": f"{C.GRN}✓{C.R}", "warn": f"{C.YEL}!{C.R}", "fail": f"{C.RED}✗{C.R}"}
     for status, _req, text in items:
@@ -5198,6 +5232,10 @@ def start_tool():
                     pass
                 try:
                     antiban_tick()
+                except Exception:
+                    pass
+                try:
+                    map_watch_tick(packages)
                 except Exception:
                     pass
                 # === UPGRADE INTEGRATIONS INTO MAIN LOOP ===
@@ -9520,9 +9558,11 @@ def menu_choose_game_with_package():
         for k, (name, _gid) in GAMES.items():
             print(f"{C.LPUR}[{k}]{C.R} {C.WHT}{name}{C.R}")
         print(f"{C.LPUR}[12]{C.R} {C.WHT}Custom ID / Private Link{C.R}")
+        print(f"{C.RED}[0] Quay lại menu Set up{C.R}\n")
 
         game_choice = input(f"\n{C.WHT}Chọn game [1-12]:{C.R} ").strip()
         if game_choice == "0":
+            announce_choice("0", "Quay lại menu Set up")
             return
 
         # Parse game selection
@@ -9531,9 +9571,11 @@ def menu_choose_game_with_package():
 
         if game_choice in GAMES:
             game_name, game_id = GAMES[game_choice]
+            announce_choice(game_choice, game_name)
             msg_done(f"Đã chọn game: {game_name}")
             print(f" {C.GRY}ID: {game_id}{C.R}")
         elif game_choice == "12":
+            announce_choice("12", "Custom ID / Private Link")
             game_id = input(f"\n{C.WHT}Nhập ID game hoặc Link Server VIP:{C.R} ").strip()
             if game_id:
                 ok_g, info_g, name_g = check_game_target(game_id)
@@ -9581,6 +9623,7 @@ def menu_choose_game_with_package():
 
         # Save package binding
         if pkg_choice.lower() == "all":
+            announce_choice("all", "Tất cả package")
             for pkg in packages:
                 PACKAGE_GAMES[pkg] = {
                     "game_name": game_name,
@@ -9589,6 +9632,7 @@ def menu_choose_game_with_package():
             msg_done(f"✓ Đã liên kết '{game_name}' với tất cả {len(packages)} package")
         elif pkg_choice.isdigit() and 1 <= int(pkg_choice) <= len(packages):
             pkg = packages[int(pkg_choice) - 1]
+            announce_choice(pkg_choice, _short_pkg(pkg))
             PACKAGE_GAMES[pkg] = {
                 "game_name": game_name,
                 "game_id": game_id,
@@ -10352,7 +10396,7 @@ def menu_package_prefix():
         clear_screen()
         section_title("SET UP PACKAGE")
         print(f" {C.LPUR}[1]{C.R} {C.WHT}Package mode{C.R}")
-        print(f" {C.LPUR}[2]{C.R} {C.WHT}Chọn mode package muốn chạy{C.R}")
+        print(f" {C.LPUR}[2]{C.R} {C.WHT}Nguồn package chạy{C.R}")
         print(f" {C.RED}[0] Quay lại menu chính{C.R}\n")
         sub = ask("Chọn:").strip()
         if sub == "0":
@@ -10362,7 +10406,7 @@ def menu_package_prefix():
             announce_choice("1", "Package mode")
             menu_package_mode()
         elif sub == "2":
-            announce_choice("2", "Chọn mode package muốn chạy")
+            announce_choice("2", "Nguồn package chạy")
             menu_choose_run_mode()
         else:
             invalid_choice(sub)
@@ -10497,17 +10541,17 @@ def menu_choose_run_mode():
     """Chọn nguồn package: Prefix hoặc Custom Package List"""
     while True:
         clear_screen()
-        section_title("CHỌN MODE PACKAGE MUỐN CHẠY")
-        print(f" {C.LPUR}[1]{C.R} {C.WHT}Prefix Mode{C.R}")
+        section_title("NGUỒN PACKAGE CHẠY")
+        print(f" {C.LPUR}[1]{C.R} {C.WHT}Quét theo prefix{C.R}")
         print(f"    {C.GRY}prefix: {PACKAGE_PREFIX}{C.R}")
-        print(f" {C.LPUR}[2]{C.R} {C.WHT}Custom Package List Mode{C.R}")
+        print(f" {C.LPUR}[2]{C.R} {C.WHT}Lấy từ danh sách tùy chỉnh{C.R}")
         print(f"    {C.GRY}{len(CUSTOM_PACKAGES)} package{C.R}")
         print(f" {C.RED}[0] Quay lại{C.R}\n")
         choice = ask("Chọn:").strip()
         if choice == "0":
             return
         elif choice == "1":
-            announce_choice("1", "Prefix Mode")
+            announce_choice("1", "Quét theo prefix")
             packages_list = sorted(scan_prefix_packages())
             if not packages_list:
                 msg_err(f"Không tìm thấy package nào khớp '{PACKAGE_PREFIX}'.")
@@ -10515,7 +10559,7 @@ def menu_choose_run_mode():
                 continue
             menu_run_count_selective(packages_list)
         elif choice == "2":
-            announce_choice("2", "Custom Package List Mode")
+            announce_choice("2", "Lấy từ danh sách tùy chỉnh")
             if not CUSTOM_PACKAGES:
                 msg_err("Chưa có package nào trong Custom Package List.")
                 wait_enter()
