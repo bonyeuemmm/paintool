@@ -3316,9 +3316,18 @@ def send_periodic_status_embed(packages):
     except Exception as e:
         log_event("PERIODIC_EMBED_ERR", detail=f"Gửi periodic embed lỗi: {e}")
 
+def run_source_packages():
+    """Danh sách package nguồn: các package có tiền tố đã cài.
+    Ở mode Custom thì thêm các package trong danh sách Custom đã cài (kể cả không có tiền tố)."""
+    pkgs = set(scan_prefix_packages())
+    if PACKAGE_MODE == "custom":
+        on_dev = installed_package_set()
+        pkgs.update(p for p in CUSTOM_PACKAGES if p in on_dev)
+    return sorted(pkgs)
+
 def get_all_packages():
     if PACKAGE_MODE == "custom":
-        return list_installed_packages()
+        return run_source_packages()
     output = run_cmd(["pm", "list", "packages"])
     packages = []
     for line in output.splitlines():
@@ -3353,10 +3362,7 @@ def list_installed_packages():
     - prefix: quét theo PACKAGE_PREFIX
     - custom: các package trong CUSTOM_PACKAGES có thật trên máy (giữ thứ tự nhập)
     Mọi chức năng khác đều gọi hàm này để đồng bộ theo mode."""
-    if PACKAGE_MODE == "custom":
-        on_dev = installed_package_set()
-        return [p for p in CUSTOM_PACKAGES if p in on_dev]
-    return scan_prefix_packages()
+    return run_source_packages()
 
 # ==================== ROOT / SHELL ====================
 _ROOT_MODE = "unknown"
@@ -4427,7 +4433,8 @@ def menu_selective_mode(packages_list):
             print(f" {C.LPUR}[{i:2}]{C.R} [{mark}] {pkg}")
         print("\n" + "-" * 50)
         print("Nhập số để thêm/bỏ package (ví dụ: 1 2 4 hoặc 1,2,4)")
-        print("  • reset: Xóa hết lựa chọn (chạy tất cả)")
+        print("  • a: Chọn tất cả")
+        print("  • x: Bỏ hết lựa chọn (chạy tất cả)")
         print("  • ok / q: Quay lại")
         print("-" * 50)
         if notice:
@@ -4438,7 +4445,13 @@ def menu_selective_mode(packages_list):
 
         if user_input in ("q", "ok"):
             return
-        if user_input == "reset":
+        if user_input == "a":
+            selected = list(packages_list)
+            SELECTED_PACKAGES = selected.copy()
+            SELECT_ALL_PACKAGES = False
+            notice = f"{C.GRN}✓ Đã chọn tất cả {len(selected)} package.{C.R}"
+            continue
+        if user_input == "x":
             selected = []
             SELECTED_PACKAGES = []
             SELECT_ALL_PACKAGES = True
@@ -4476,12 +4489,9 @@ def get_active_packages():
     """Trả về danh sách packages cần chạy (filtered by selection)"""
     global SELECTED_PACKAGES, SELECT_ALL_PACKAGES
 
-    if PACKAGE_MODE == "custom":
-        base = list(CUSTOM_PACKAGES)
-    else:
-        base = list(PACKAGE_GAMES.keys())
+    base = run_source_packages()
 
-    picked = [p for p in SELECTED_PACKAGES if p in base]
+    picked = [p for p in base if p in SELECTED_PACKAGES]
     if SELECT_ALL_PACKAGES or not picked:
         return base
     return picked
@@ -10117,12 +10127,12 @@ def menu_search_package():
             invalid_choice(cmd)
 
 def menu_package_prefix():
-    """Menu 3: [1] Package mode, [2] Chọn mode package muốn chạy"""
+    """Menu 3: [1] Package mode, [2] Chọn package muốn chạy"""
     while True:
         clear_screen()
         section_title("SET UP PACKAGE")
         print(f" {C.LPUR}[1]{C.R} {C.WHT}Package mode{C.R}")
-        print(f" {C.LPUR}[2]{C.R} {C.WHT}Nguồn package chạy{C.R}")
+        print(f" {C.LPUR}[2]{C.R} {C.WHT}Chọn package muốn chạy{C.R}")
         print(f" {C.RED}[0] Quay lại{C.R}\n")
         sub = ask("Chọn:").strip()
         if sub == "0":
@@ -10130,7 +10140,12 @@ def menu_package_prefix():
         if sub == "1":
             menu_package_mode()
         elif sub == "2":
-            menu_choose_run_mode()
+            packages_list = run_source_packages()
+            if not packages_list:
+                msg_err("Không tìm thấy package nào đã cài để chạy.")
+                wait_enter()
+                continue
+            menu_run_count_selective(packages_list)
         else:
             invalid_choice(sub)
 
@@ -10255,36 +10270,6 @@ def menu_setup_package_prefix():
     else:
         pass
     wait_enter()
-
-def menu_choose_run_mode():
-    """Chọn nguồn package: Prefix hoặc Custom Package List"""
-    while True:
-        clear_screen()
-        section_title("NGUỒN PACKAGE CHẠY")
-        print(f" {C.LPUR}[1]{C.R} {C.WHT}Quét theo prefix{C.R}")
-        print(f"    {C.GRY}prefix: {PACKAGE_PREFIX}{C.R}")
-        print(f" {C.LPUR}[2]{C.R} {C.WHT}Lấy từ danh sách tùy chỉnh{C.R}")
-        print(f"    {C.GRY}{len(CUSTOM_PACKAGES)} package{C.R}")
-        print(f" {C.RED}[0] Quay lại{C.R}\n")
-        choice = ask("Chọn:").strip()
-        if choice == "0":
-            return
-        elif choice == "1":
-            packages_list = sorted(scan_prefix_packages())
-            if not packages_list:
-                msg_err(f"Không tìm thấy package nào khớp '{PACKAGE_PREFIX}'.")
-                wait_enter()
-                continue
-            menu_run_count_selective(packages_list)
-        elif choice == "2":
-            if not CUSTOM_PACKAGES:
-                msg_err("Chưa có package nào trong Custom Package List.")
-                wait_enter()
-                continue
-            menu_run_count_selective(list(CUSTOM_PACKAGES))
-        else:
-            msg_err("Lựa chọn không hợp lệ.")
-            time.sleep(1)
 
 def menu_run_count_selective(packages_list):
     """Hiện danh sách package và cho chọn Custom Count hoặc Selective"""
