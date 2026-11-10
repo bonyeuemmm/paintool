@@ -5940,7 +5940,7 @@ def backup_menu():
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Backup 1 tab{C.R}")
         print(f"{C.LPUR}[4]{C.R} {C.WHT}Restore 1 tab{C.R}")
         print(f"{C.LPUR}[5]{C.R} {C.WHT}Xem danh sách backup{C.R}")
-        print(f"{C.RED}[0] Quay lại menu chính{C.R}")
+        print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
             time.sleep(0.6)
@@ -6590,7 +6590,7 @@ def menu_cookie_roblox():
         
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Lấy cookie tài khoản{C.R}")
         
-        print(f"{C.RED}[0] Quay lại menu chính{C.R}\n")
+        print(f"{C.RED}[0] Quay lại{C.R}\n")
         
         choice = ask("Chọn chức năng:").strip()
         
@@ -7693,7 +7693,7 @@ def menu_view_log():
         print(f"{C.LPUR}[11]{C.R} {C.WHT}Hỏi AI về log{C.R}")
         print(f"{C.LPUR}[12]{C.R} {C.WHT}Phân loại lỗi 7 ngày{C.R}")
         print(f"{C.LPUR}[r]{C.R} {C.WHT}Xem lại bộ lọc vừa dùng{C.R}")
-        print(f"{C.RED}[0] Quay lại menu chính{C.R}")
+        print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "7":
             menu_error_code()
@@ -8672,7 +8672,7 @@ def menu_game_profiles():
         print(f"{C.LPUR}[1]{C.R} {C.WHT}Tạo/Sửa hồ sơ game{C.R}")
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Xóa hồ sơ game{C.R}")
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Sao chép từ game khác{C.R}")
-        print(f"{C.RED}[0] Quay lại menu Set up{C.R}")
+        print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
 
         if sub == "1":
@@ -9457,7 +9457,7 @@ def menu_key_injector():
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Chèn key từ vault ngay{C.R}")
         print(f"{C.LPUR}[4]{C.R} {C.WHT}Tự động lưu & chèn{C.R}")
         print(f"{C.LPUR}[5]{C.R} {C.WHT}Xóa vault của 1 tab{C.R}")
-        print(f"{C.RED}[0] Quay lại menu Set up{C.R}")
+        print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
             time.sleep(0.6)
@@ -9602,7 +9602,7 @@ def menu_screen_guard():
         print(f"{C.LPUR}[1]{C.R} {C.WHT}Màn hình trắng/đen [{f'{C.GRN}Bật{C.R}' if WB_DETECT else f'{C.GRY}Tắt{C.R}'}]{C.R}")
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Not Responding / GUI đứng [{f'{C.GRN}Bật{C.R}' if OVERLAY_DETECT else f'{C.GRY}Tắt{C.R}'}]{C.R}")
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Thử quét ngay{C.R}")
-        print(f"{C.RED}[0] Quay lại menu Set up{C.R}")
+        print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
             time.sleep(0.6)
@@ -10123,7 +10123,7 @@ def menu_package_prefix():
         section_title("SET UP PACKAGE")
         print(f" {C.LPUR}[1]{C.R} {C.WHT}Package mode{C.R}")
         print(f" {C.LPUR}[2]{C.R} {C.WHT}Nguồn package chạy{C.R}")
-        print(f" {C.RED}[0] Quay lại menu chính{C.R}\n")
+        print(f" {C.RED}[0] Quay lại{C.R}\n")
         sub = ask("Chọn:").strip()
         if sub == "0":
             return
