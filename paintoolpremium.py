@@ -505,7 +505,6 @@ def notify_tool_stopped(reason, unexpected=False):
         return
     up = fmt_duration(time.time() - START_UP_TIME.timestamp()) if START_UP_TIME else "?"
     total = sum(REJOIN_COUNT.values())
-    print("\033[1;33m[*] Đang gửi cảnh báo dừng tool lên Discord...\033[0m")
     send_detailed_alert("aborted" if unexpected else "stopped", "Tool đã dừng",
                         f"Tool đã dừng sau **{up}** chạy, tổng cộng **{total}** lần rejoin.",
                         reason=reason,
@@ -599,7 +598,6 @@ def check_low_ram(packages):
         return
     _LOW_RAM_LAST = now
     msg = f"RAM trống chỉ còn {free} MB (ngưỡng {LOW_RAM_MB} MB)."
-    print(f"\033[1;33m[!] {msg}\033[0m")
     action = None
     if LOW_RAM_AUTO_CLEAN:
         if root_mode():
@@ -778,7 +776,6 @@ def ask_main(label):
             return line.rstrip("\n")
         if schedule_start_due():
             print()
-            msg_info(f"Đến giờ hẹn {SCHEDULE['start']}: tự động Start...")
             log_event("SCHEDULE", detail=f"Tự động Start theo hẹn giờ {SCHEDULE['start']}")
             time.sleep(1)
             return "1"
@@ -831,7 +828,6 @@ def wait_for_network(label=""):
             break
         if time.time() - last_print >= 30:
             last_print = time.time()
-            print(f"\033[1;33m[*] Vẫn chưa có mạng ({int(time.time() - t0)}s)...\033[0m")
     down = int(time.time() - t0)
     print(f"\033[1;32m[✓] Đã có mạng trở lại sau {down}s. Tiếp tục rejoin.\033[0m")
     log_event("NET_UP", detail=f"Mạng trở lại sau {down}s")
@@ -1144,7 +1140,6 @@ def screen_guard(packages):
         if frame is None:
             if not _FRAME_WARNED:
                 _FRAME_WARNED = True
-                print("\033[1;33m[!] Không chụp được màn hình (screencap lỗi) nên chưa kiểm tra được trắng/đen / GUI đứng.\033[0m")
         else:
             for p in cands:
                 res = analyze_frame(frame, snap["rects"].get(p))
@@ -1703,7 +1698,6 @@ def _confirm_exit():
         running = []
     if not running:
         return True
-    print(f"\n {C.YEL}Đang chạy:{C.R}")
     for pkg in running:
         print(f"   - Tab: {tab_label(pkg)}")
     print(f" {C.GRY}Các tab game vẫn chạy trên máy sau khi thoát.{C.R}")
@@ -1714,7 +1708,6 @@ def _confirm_exit():
 
 def exit_tool():
     if not _confirm_exit():
-        msg_cancel("Đã hủy thoát.")
         return
     try:
         print(f"\n {C.GRN}[✓] Đã thoát tool thành công. Good bye!{C.R}")
@@ -1957,7 +1950,6 @@ def fatal_exit(message, purge=True):
     except Exception:
         pass
     msg_err(message)
-    msg_info("Tool sẽ tự động ngắt và thoát.")
     log_event("LICENSE", detail=message)
     time.sleep(3)
     sys.exit(1)
@@ -3112,7 +3104,6 @@ def handle_send_text():
         print(f" {C.GRY}Gửi tới: webhook của bạn (đã cài ở mục [5]){C.R}")
         content_input = input("Nhập nội dung muốn gửi (Để trống để thoát): ").strip()
         if not content_input:
-            msg_cancel("Đã thoát Send Text, quay về menu chính.")
             time.sleep(1)
             return
 
@@ -3132,7 +3123,6 @@ def handle_send_text():
             "embeds": [{"description": description_text, "footer": {"text": footer_text}, "color": 65280}]
         }
 
-        msg_info("Đang gửi nội dung lên Discord...")
         try:
             payload = json.dumps(embed_data)
             code = run_cmd(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", text_target,
@@ -3527,8 +3517,6 @@ def retry_countdown(pkg, why):
         stopped, _down = wait_for_network(pkg)
         if stopped:
             return True
-    print(f"\033[1;33m[-] {tab_label(pkg)}: {why}. Sau {RETRY_COUNTDOWN_SECONDS}s sẽ tắt Đa nhiệm và vào lại...\033[0m")
-    print("\033[1;33m    Đếm ngược: ", end="", flush=True)
     for sec in range(RETRY_COUNTDOWN_SECONDS, 0, -1):
         print(f"{sec}..", end=" ", flush=True)
         if wait_with_stop_check(1):
@@ -3578,7 +3566,6 @@ def _join_attempts(pkg, hard=False):
             JOINED_AT[pkg] = time.time()
             print(f"\033[1;32m[+] {tab_label(pkg)} đã ở trong Map, bỏ qua lệnh vào lại.\033[0m")
             return True
-        print(f"\033[1;33m[*] Vào Map {tab_label(pkg)} (lần {attempt}/{LAUNCH_MAX_RETRY})...\033[0m")
         open_game(pkg, hard=(hard or (attempt > 1 and not soft_only)))
 
         started = False
@@ -3595,7 +3582,6 @@ def _join_attempts(pkg, hard=False):
                 return False
             continue
 
-        print(f"\033[1;33m[*] {tab_label(pkg)} đã bật. Chờ {MAP_LOAD_WAIT}s để Map ổn định...\033[0m")
         problem = wait_map_load(pkg)
         if stop_start:
             return False
@@ -3816,8 +3802,6 @@ def detect_problem(pkg):
         return _crash_detail(pkg, "Tab bị tắt Đa nhiệm / Game crash (không còn tiến trình)")
 
     if not is_app_in_foreground(pkg):
-        print(f"\033[1;33m[-] {tab_label(pkg)} bị thoát ra Màn hình chính/Lobby. Đếm ngược {LOBBY_COUNTDOWN_SEC}s...\033[0m")
-        print("\033[1;33m    Đếm ngược: \033[0m", end="", flush=True)
         for sec in range(LOBBY_COUNTDOWN_SEC, 0, -1):
             print(f"{sec}..", end=" ", flush=True)
             if wait_with_stop_check_precise(LOBBY_COUNTDOWN_TICK):
@@ -3952,7 +3936,6 @@ def map_watch_tick(packages):
         if JOIN_CONFIRMED.get(pkg, 0) > LAUNCHED_AT.get(pkg, 0):
             continue  # đã xác nhận vào map
         log_event("MAP_CHECK", pkg, "Chưa vào map: tự động vào lại (lần sau sẽ tắt đa nhiệm nếu vẫn chưa vào)")
-        print(f"\033[1;33m[*] {tab_label(pkg)}: chưa thấy vào map, tự động thử lại...\033[0m")
         recover_tab(pkg, "Chưa vào Map (tự kiểm tra)")
 
 def _tamper_alert(pkg):
@@ -4002,14 +3985,12 @@ def recover_tab(pkg, reason):
     
     # UPGRADE #2: Check account health & rotation
     if is_account_resting(pkg):
-        print(f"\033[1;33m[*] {tab_label(pkg)} đang rest ({get_account_health_score(pkg)}% health) → skip rejoin\033[0m")
         log_event("ROTATION_SKIP", pkg, "account resting")
         return
     
     # UPGRADE #3: Exponential backoff rejoin
     if not can_rejoin_now(pkg):
         wait_sec = REJOIN_BACKOFF[pkg].get("wait_until", 0) - time.time()
-        print(f"\033[1;33m[*] {tab_label(pkg)} backoff rejoin, chờ {wait_sec:.0f}s nữa\033[0m")
         log_event("BACKOFF_WAIT", pkg, f"wait={wait_sec:.0f}s")
         return
     
@@ -4149,7 +4130,6 @@ def recover_frozen_tab(pkg):
             TAB_EXTEND[pkg] = TAB_EXTEND.get(pkg, 0) + 1
             LAST_ACTIVITY[pkg] = time.time()
             log_event("FREEZE_SKIP", pkg, f"Màn hình vẫn đổi (đang tải/chơi), chưa xóa data ({TAB_EXTEND[pkg]}/{TAB_EXTEND_MAX})")
-            print(f"\033[1;33m[*] {tab_label(pkg)}: không có log nhưng màn hình vẫn đổi, chưa xóa data ({TAB_EXTEND[pkg]}/{TAB_EXTEND_MAX})\033[0m")
             return
         if _changing is False:
             TAB_EXTEND[pkg] = 0
@@ -4534,7 +4514,6 @@ def launch_all(packages, hard=False):
                 print(f"\033[1;36m[*] Đang khởi chạy Tab [{i + idx_b + 1}/{total}]: {tab_label(pkg)}\033[0m")
                 join_map(pkg, hard=hard)
             if i + batch_size < total and not stop_start:
-                print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
                 if wait_with_stop_check(15): break
     else:
         for idx, pkg in enumerate(packages):
@@ -4542,7 +4521,6 @@ def launch_all(packages, hard=False):
             print(f"\033[1;36m[*] Đang khởi chạy Tab [{idx + 1}/{total}]: {tab_label(pkg)}\033[0m")
             join_map(pkg, hard=hard)
             if idx < total - 1:
-                print(f"\033[1;33m[*] Chờ {CLONE_LAUNCH_DELAY}s...\033[0m")
                 if wait_with_stop_check(CLONE_LAUNCH_DELAY): break
 
 # ==================== KIỂM TRA TRƯỚC KHI START ====================
@@ -4632,7 +4610,6 @@ def _ask_close_all_after_zero():
         pkgs = []
     if not pkgs:
         return ""
-    print(f"\n\033[1;33m[?] Đang còn chạy: {len(pkgs)} tab game\033[0m")
     ans = ask("Tắt tất cả tab game? y = tắt, n = bỏ qua:").strip().lower()
     if ans not in ("y", "yes"):
         return " | giữ nguyên các tab đang chạy"
@@ -4748,7 +4725,6 @@ def check_account_rotation():
         health = get_account_health_score(pkg)
         if health < 50 and status != "rest":
             ACCOUNT_ROTATION[pkg] = {"status": "rest", "rest_until": now + 7200}  # Rest 2h
-            print(f"\033[1;33m[*] {tab_label(pkg)} health {health}% < 50% → standby 2h\033[0m")
             log_event("ROTATION", pkg, f"health={health}% → rest 2h")
         elif status == "rest" and now >= rest_until:
             ACCOUNT_ROTATION[pkg] = {"status": "active", "rest_until": 0}
@@ -4848,7 +4824,6 @@ def should_smart_clear(pkg):
 def do_smart_cache_clear(pkg, reason):
     """Xóa cache smart"""
     try:
-        print(f"\033[1;33m[*] Smart cache clear {tab_label(pkg)}: {reason}\033[0m")
         sh(f"rm -rf /data/data/{pkg}/cache/* /data/data/{pkg}/code_cache/*")
         LAST_SMART_CLEAR[pkg] = time.time()
         log_event("SMART_CLEAR", pkg, reason)
@@ -4877,17 +4852,14 @@ def analyze_screen_advanced(pkg, state):
     state_changes = state_changes[-10:]
     SCREEN_ADVANCED["state_changes"][pkg] = state_changes
     if state == "loading_stuck" and duration > SCREEN_ADVANCED["loading_bar_timeout"]:
-        print(f"\033[1;33m[!] {tab_label(pkg)} loading bar stuck {duration:.0f}s → soft restart\033[0m")
         log_event("SCREEN_ADV", pkg, "loading_stuck restart")
         sh(f"am start -n {shlex.quote(pkg)}/com.roblox.client.startup.ActivitySplashScreen")
     elif state == "splash_screen" and duration > SCREEN_ADVANCED["splash_screen_timeout"]:
-        print(f"\033[1;33m[!] {tab_label(pkg)} splash screen {duration:.0f}s → kill & reopen\033[0m")
         log_event("SCREEN_ADV", pkg, "splash_timeout restart")
         sh(f"am force-stop {shlex.quote(pkg)}")
         time.sleep(2)
         open_game(pkg)
     elif state == "stuck_lobby" and duration > SCREEN_ADVANCED["stuck_lobby_timeout"]:
-        print(f"\033[1;33m[!] {tab_label(pkg)} stuck ở lobby {duration:.0f}s → enter map\033[0m")
         log_event("SCREEN_ADV", pkg, "stuck_lobby action")
 
 # ==================== UPGRADE #7: SMART RETRY STRATEGY ====================
@@ -5009,7 +4981,6 @@ def check_should_pause_peak():
             ANTI_BAN["paused"] = True
             ANTI_BAN["pause_until"] = time.time() + 3600
             log_event("DYNAMIC_PAUSE", detail=f"peak_hour={now}")
-            print(f"\033[1;33m[*] Peak hour {now}:00 → auto pause rejoin 1h\033[0m")
 
 def start_tool():
     global stop_start, START_UP_TIME, CYCLE_START, STOP_REASON, _LISTENER_GEN, NEXT_AUTO_RESTART, _HOP_LAG, _HOP_PAUSE_UNTIL
@@ -5018,7 +4989,7 @@ def start_tool():
         return
     RUN_LIMIT_HOURS = float(STOP_TIMER["hours"]) if STOP_TIMER.get("enabled") and float(STOP_TIMER.get("hours") or 0) > 0 else 0
     if RUN_LIMIT_HOURS:
-        msg_info(f"Giới hạn thời gian chạy: {RUN_LIMIT_HOURS:g} giờ" + (" (sẽ tắt các clone khi hết giờ)" if STOP_TIMER.get("close_apps") else ""))
+        pass
     stop_start = False
     CYCLE_START = None
     STOP_REASON = ""
@@ -5075,15 +5046,13 @@ def start_tool():
     if report_on:
         print("\033[1;32m[*] Báo cáo Discord (kèm ảnh chụp màn hình) mỗi 5 phút: BẬT.\033[0m")
     else:
-        print("\033[1;33m[*] Báo cáo Discord mỗi 5 phút: TẮT (chưa set Webhook URL, tool sẽ không chụp ảnh màn hình).\033[0m")
+        pass
     if report_on:
-        print("\033[1;32m[*] Cảnh báo Discord: BẬT  \033[1;31m● Đỏ\033[0m Kick/Crash  \033[1;33m● Vàng\033[0m Lobby  \033[1;32m● Xanh\033[0m Rejoin thành công")
+        pass
     if len(packages) >= 4:
-        print(f"\033[1;33m[*] Số lượng tab >= 4, áp dụng mở nhóm 3 tab, cách nhau 15 giây.\033[0m")
+        pass
     else:
-        print(f"\033[1;33m[*] Delay mở mỗi tab clone: {CLONE_LAUNCH_DELAY} giây.\033[0m")
-    print("\033[1;33m[*] Bấm 0 + Enter để dừng Start  |  Bấm s + Enter để xem bảng trạng thái các tab.\033[0m")
-    print(f"\033[1;33m[*] Nhật ký ghi tại: {LOG_FILE}\033[0m")
+        pass
     print("--------------------------------------------------")
 
     listener = threading.Thread(target=listen_for_stop, args=(gen,), daemon=True)
@@ -5134,12 +5103,10 @@ def start_tool():
         while not stop_start:
             if schedule_stop_due():
                 STOP_REASON = "schedule"
-                print(f"\n\033[1;33m[*] Đến giờ hẹn dừng {SCHEDULE['stop']}, đang dừng Start...\033[0m")
                 stop_start = True
                 break
             if RUN_LIMIT_HOURS and START_UP_TIME and (datetime.now() - START_UP_TIME).total_seconds() >= RUN_LIMIT_HOURS * 3600:
                 STOP_REASON = "duration"
-                print(f"\n\033[1;33m[*] Đã chạy đủ {RUN_LIMIT_HOURS:g} giờ, đang dừng Start...\033[0m")
                 stop_start = True
                 break
             current_time = time.time()
@@ -5175,7 +5142,6 @@ def start_tool():
 
             elif AUTO_REJOIN_MODE == 2:
                 if elapsed_minutes >= DELAY_REJOIN_MINUTES:
-                    print(f"\033[1;33m[*] Chu kỳ {DELAY_REJOIN_MINUTES}p hoàn tất. Tắt Đa nhiệm và vào lại Map toàn bộ tab...\033[0m")
                     for _p in packages:
                         REJOIN_COUNT[_p] = REJOIN_COUNT.get(_p, 0) + 1
                         # Apply per-package game profile trước khi rejoin Mode 2
@@ -5347,16 +5313,15 @@ def start_tool():
             restore_screen_after_run()
             if STOP_REASON == "schedule":
                 why = f"Đến giờ hẹn dừng {SCHEDULE['stop']}"
-                print(f"\n\033[1;32m[✓] Đã dừng Start theo hẹn giờ ({SCHEDULE['stop']}). Quay lại menu...\033[0m")
+                print(f"\n\033[1;32m[✓] Đã dừng Start theo hẹn giờ ({SCHEDULE['stop']}).\033[0m")
             elif STOP_REASON == "duration":
                 why = f"Đã chạy đủ {RUN_LIMIT_HOURS:g} giờ theo giới hạn"
-                print(f"\n\033[1;32m[✓] Đã dừng Start sau {RUN_LIMIT_HOURS:g} giờ. Quay lại menu...\033[0m")
+                print(f"\n\033[1;32m[✓] Đã dừng Start sau {RUN_LIMIT_HOURS:g} giờ.\033[0m")
             else:
                 why = "Người dùng bấm 0 để dừng Start"
-                print("\n\033[1;31m[!] Đã dừng giám sát. Quay lại menu...\033[0m")
+                print("\n\033[1;31m[!] Đã dừng giám sát.\033[0m")
                 why += _ask_close_all_after_zero()
             if STOP_REASON in ("duration", "schedule") and STOP_TIMER.get("close_apps"):
-                print("\033[1;33m[*] Đang tắt các clone...\033[0m")
                 for _pkg in list_installed_packages():
                     close_game(_pkg)
                 why += " | đã tắt các clone"
@@ -5491,7 +5456,6 @@ def check_game_status():
         GAME_STATUS_PAUSED = True
         GAME_STATUS_REASON = ("Game đang bảo trì / không có người chơi" if status["playing"] == 0
                                else "Game vừa mới update (server cũ sắp đóng)")
-        print(f"\033[1;33m[!] {GAME_STATUS_REASON}. Tạm dừng dò lỗi/rejoin để tránh spam vào server đang sập...\033[0m")
         log_event("GAME_PAUSE", detail=f"{GAME_STATUS_REASON} | playing={status['playing']}")
         notify_async("warn", "Tạm dừng Rejoin", f"{GAME_STATUS_REASON} (đang chơi: {status['playing']} người).",
                      action="Tool sẽ tự kiểm tra lại và chạy tiếp khi game ổn định.")
@@ -5573,12 +5537,10 @@ def do_server_hop(pkg, why):
     HOP_LAST[pkg] = now
     link, kind, desc = pick_hop_target(pkg)
     if not link:
-        print(f"{C.YEL}[!] {tab_label(pkg)}: chưa đổi được server ({desc}).{C.R}")
         log_event("HOP_FAIL", pkg, f"{why}; {desc}")
         _daily_bump("hop_fail")
         return False
     HOP_LOG.append(now)
-    print(f"{C.YEL}[*] {tab_label(pkg)}: {why} → đổi sang {desc}...{C.R}")
     log_event("HOP", pkg, f"{why} -> {desc}")
     notify_async("hop", "Đổi server", f"`{pkg}` đổi sang {desc}.", pkg=pkg, reason=why,
                  action="Tắt hẳn tab rồi vào server mới (vào không được thì quay lại game gốc)")
@@ -5591,7 +5553,6 @@ def do_server_hop(pkg, why):
     if ok and kind == "vip":
         HOP_CURRENT[pkg] = link
     if not ok and not stop_start:
-        print(f"{C.YEL}[!] {tab_label(pkg)}: server mới không vào được, quay lại game gốc...{C.R}")
         HOP_CURRENT.pop(pkg, None)
         ok = join_map(pkg, hard=True)
     _daily_bump("hop_ok" if ok else "hop_fail")
@@ -5632,7 +5593,6 @@ def hop_check(packages):
         _HOP_LAG = 0
         return
     _HOP_LAG += 1
-    print(f"{C.YEL}[!] Độ trễ tới Roblox {lat}ms > {HOP_PING_MS}ms ({_HOP_LAG}/{HOP_CHECKS} lần đo liên tiếp).{C.R}")
     if _HOP_LAG < HOP_CHECKS:
         return
     recent = [t for t in HOP_LOG if now - t < 1200]
@@ -5640,7 +5600,6 @@ def hop_check(packages):
         _HOP_PAUSE_UNTIL = now + 1800
         _HOP_LAG = 0
         msg = f"Đã đổi server {len(recent)} lần trong 20 phút mà độ trễ vẫn {lat}ms: nhiều khả năng do mạng của máy."
-        print(f"{C.YEL}[!] {msg} Tạm dừng Auto Server Hop 30 phút.{C.R}")
         log_event("HOP_PAUSE", detail=msg)
         notify_async("warn", "Tạm dừng Auto Server Hop", msg, action="Kiểm tra Wi-Fi / 4G của máy", cooldown=1800)
         return
@@ -5689,7 +5648,7 @@ def menu_vip_servers():
             if not valid_vip_link(link):
                 msg_err("Link không hợp lệ (chỉ nhận link roblox.com hoặc roblox://, không chứa khoảng trắng / ký tự lạ).")
             elif link in VIP_SERVERS:
-                msg_warn("Link này đã có trong danh sách.")
+                pass
             else:
                 VIP_SERVERS.append(link)
                 save_config_file()
@@ -5697,7 +5656,6 @@ def menu_vip_servers():
             time.sleep(1.8)
         elif sub == "2":
             if not VIP_SERVERS:
-                msg_warn("Chưa có link nào để xóa.")
                 time.sleep(1.5)
                 continue
             n = input("Nhập số thứ tự link cần xóa (Enter để hủy): ").strip()
@@ -5743,7 +5701,6 @@ def menu_server_hop():
         menu_vip_servers()
         return
     elif sub == "5":
-        msg_info("Đang đo độ trễ tới Roblox (3 lần)...")
         lat = measure_latency_ms()
         if lat is None:
             msg_err("Không đo được (máy không có lệnh curl).")
@@ -5752,11 +5709,9 @@ def menu_server_hop():
         wait_enter()
         return
     elif sub == "0":
-        msg_cancel("Đã quay lại menu Set up.")
         time.sleep(0.8)
         return
     else:
-        msg_cancel("Lựa chọn không hợp lệ, không có gì thay đổi.")
         time.sleep(1.2)
         return
     save_config_file()
@@ -5906,9 +5861,8 @@ def setup_auto_rejoin():
         else:
             save_config_file()
             msg_done("Đã chọn cơ chế: Delay Rejoin và lưu cấu hình.")
-            msg_warn(f"Thời gian nhập không hợp lệ, giữ nguyên chu kỳ {DELAY_REJOIN_MINUTES} phút.")
     else:
-        msg_cancel("Lựa chọn không hợp lệ, giữ nguyên cơ chế hiện tại: " + get_rejoin_mode_str())
+        pass
     time.sleep(2)
 
 def setup_auto_clear():
@@ -5934,11 +5888,9 @@ def setup_auto_clear():
         else:
             msg_err("Chỉ nhận 3, 4 hoặc 5 phút. Giữ nguyên ngưỡng cũ.")
     elif sub == "0":
-        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
-        msg_cancel("Lựa chọn không hợp lệ, không có gì thay đổi.")
         time.sleep(1.2)
         return
     save_config_file()
@@ -5960,11 +5912,9 @@ def setup_auto_backup():
     elif sub == "2":
         AUTO_BACKUP = False
     elif sub == "0":
-        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
-        msg_cancel("Lựa chọn không hợp lệ, không có gì thay đổi.")
         time.sleep(1.2)
         return
     save_config_file()
@@ -5993,7 +5943,6 @@ def backup_menu():
         print(f"{C.RED}[0] Quay lại menu chính{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
-            msg_info("Quay lại menu chính...")
             time.sleep(0.6)
             return
         if sub not in ("1", "2", "3", "4", "5"):
@@ -6013,7 +5962,7 @@ def backup_menu():
                     prev = " + bản cũ" if backup_size(p, prev=True) > 0 else ""
                     print(f"\033[1;32m[+] {tab_label(p)}: {round(info[0] / 1024 / 1024, 1)} MB, {info[1]}{prev}\033[0m")
                 else:
-                    print(f"\033[1;33m[-] {tab_label(p)}: chưa có backup\033[0m")
+                    pass
             print(f"Thư mục: {BACKUP_DIR}")
             input("Enter để quay lại...")
 
@@ -6022,17 +5971,14 @@ def backup_menu():
             if sub == "3":
                 pkg = pick_package(packages)
                 if not pkg:
-                    msg_cancel("Đã hủy chọn tab.")
                     time.sleep(1)
                     continue
                 targets = [pkg]
             if input("Sẽ tắt tab để backup dữ liệu nhất quán. Tiếp tục? (y/n): ").strip().lower() != "y":
-                msg_cancel("Đã hủy backup.")
                 time.sleep(1)
                 continue
             done_n = 0
             for p in targets:
-                print(f"\033[1;33m[*] Đang backup {tab_label(p)}...\033[0m")
                 ok, msg = backup_tab(p, stop_first=True)
                 if ok:
                     NEEDS_LOGIN.discard(p)
@@ -6041,7 +5987,7 @@ def backup_menu():
             if done_n == len(targets):
                 msg_done(f"Backup thành công {done_n}/{len(targets)} tab (lưu ở {BACKUP_DIR}).")
             else:
-                msg_warn(f"Backup xong {done_n}/{len(targets)} tab, các tab còn lại bị lỗi (xem thông báo phía trên).")
+                pass
             wait_enter("Xong. Ấn Enter để quay lại...")
 
         elif sub in ("2", "4"):
@@ -6049,12 +5995,10 @@ def backup_menu():
             if sub == "4":
                 pkg = pick_package(packages)
                 if not pkg:
-                    msg_cancel("Đã hủy chọn tab.")
                     time.sleep(1)
                     continue
                 targets = [pkg]
             if input("Sẽ xóa data hiện tại của tab và thay bằng bản backup. Tiếp tục? (y/n): ").strip().lower() != "y":
-                msg_cancel("Đã hủy restore.")
                 time.sleep(1)
                 continue
             done_n = 0
@@ -6062,7 +6006,6 @@ def backup_menu():
                 use_prev = False
                 if sub == "4" and backup_size(p, prev=True) > 0:
                     use_prev = input("Dùng bản backup cũ hơn? (y = bản cũ, Enter = bản mới nhất): ").strip().lower() == "y"
-                print(f"\033[1;33m[*] Đang restore {tab_label(p)}...\033[0m")
                 ok, msg = restore_tab(p, prev=use_prev)
                 if ok:
                     NEEDS_LOGIN.discard(p)
@@ -6071,7 +6014,7 @@ def backup_menu():
             if done_n == len(targets):
                 msg_done(f"Restore thành công {done_n}/{len(targets)} tab.")
             else:
-                msg_warn(f"Restore xong {done_n}/{len(targets)} tab, các tab còn lại bị lỗi (xem thông báo phía trên).")
+                pass
             print(f" {C.GRY}Mở lại tab bằng Start hoặc mục [8].{C.R}")
             wait_enter("Xong. Ấn Enter để quay lại...")
 
@@ -6145,7 +6088,6 @@ def ensure_cookie_db(pkg):
     db = find_cookie_db(pkg)
     if db:
         return db
-    msg_info(f"{pkg} chưa có dữ liệu WebView, mở app 1 lần để khởi tạo...")
     open_game(pkg, hard=True, enter_map=False)
     for _ in range(15):
         time.sleep(2)
@@ -6617,7 +6559,6 @@ def get_cookie_account():
             name = f"cookie {safe}.txt"
         else:
             name = f"cookie {pkg}.txt"
-            msg_info("Chưa lấy được username (cookie có thể đã đăng xuất), đặt tên theo package.")
         folder = _cookie_download_dir()
         if not folder:
             msg_err("Không tìm thấy thư mục Download. Chạy 'termux-setup-storage' rồi thử lại.")
@@ -6633,7 +6574,7 @@ def get_cookie_account():
 
     print()
     if done:
-        msg_info(f"Hoàn tất: {done}/{len(picks)}.")
+        pass
     wait_enter()
 
 def menu_cookie_roblox():
@@ -6716,7 +6657,7 @@ def menu_anti_afk():
         print(f" Chu kỳ: mỗi {ANTI_AFK_SEC // 60} phút, chỉ khi Roblox đang hiện trên màn hình")
         print(f" Lần gần nhất: {_ANTI_AFK_STATE['last_result'] or 'chưa có'}")
         if not root_mode():
-            print(f"\n {C.YEL}Máy chưa có root: chức năng này không gửi được thao tác.{C.R}")
+            pass
         print(f"\n{C.LPUR}[1]{C.R} {C.WHT}Bật{C.R}")
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Tắt{C.R}")
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Đổi chế độ{C.R}")
@@ -6746,7 +6687,7 @@ def menu_anti_afk():
             menu_daily_stats()
         elif sub == "4":
             if ANTI_AFK.get("mode") == "tap":
-                msg_warn("Chế độ chạm sẽ bấm vào giữa màn hình, có thể trúng nút trong game.")
+                pass
             ok, info = anti_afk_pulse()
             if ok:
                 msg_done(f"Đã gửi thao tác: {info}")
@@ -6855,7 +6796,6 @@ def emergency_stop():
         print(f"   - Tab game: {tab_label(pkg)}")
     print()
     if ask("Dừng tất cả ngay? (y/n):").strip().lower() not in ("y", "yes"):
-        msg_cancel("Đã hủy, không dừng gì.")
         wait_enter()
         return
     stopped = []
@@ -6895,18 +6835,15 @@ def setup_low_ram():
             LOW_RAM_MB = int(v)
             msg = f"Đã đặt ngưỡng RAM thấp: {LOW_RAM_MB} MB"
         else:
-            msg_cancel("Chỉ nhận số từ 200 đến 4000, giữ nguyên ngưỡng hiện tại.")
             time.sleep(1.5)
             return
     elif sub == "4":
         LOW_RAM_AUTO_CLEAN = not LOW_RAM_AUTO_CLEAN
         msg = f"Tự dọn cache khi RAM thấp: {'BẬT' if LOW_RAM_AUTO_CLEAN else 'TẮT'}"
     elif sub == "0":
-        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
-        msg_cancel("Lựa chọn không hợp lệ, không có gì thay đổi.")
         time.sleep(1.2)
         return
     save_config_file()
@@ -6931,9 +6868,9 @@ def menu_profile():
         if sub == "1":
             name = input("Đặt tên profile (vd: Grow-2h): ").strip()[:20]
             if not name:
-                msg_cancel("Chưa nhập tên, đã hủy.")
+                pass
             elif name in PROFILES and input(f"Profile '{name}' đã có, ghi đè? (y/n): ").strip().lower() != "y":
-                msg_cancel("Đã hủy, giữ nguyên profile cũ.")
+                pass
             else:
                 PROFILES[name] = profile_snapshot()
                 save_config_file()
@@ -6946,7 +6883,7 @@ def menu_profile():
                 save_config_file()
                 msg_done(f"Đã nạp profile '{n}': {profile_summary(PROFILES[n])}")
             else:
-                msg_cancel("Không nạp profile nào.")
+                pass
             wait_enter()
         elif sub == "3":
             n = pick_profile("Nhập số profile cần xóa (Enter để hủy): ")
@@ -6955,10 +6892,9 @@ def menu_profile():
                 save_config_file()
                 msg_done(f"Đã xóa profile '{n}'.")
             else:
-                msg_cancel("Không xóa profile nào.")
+                pass
             wait_enter()
         elif sub == "0":
-            msg_info("Quay lại menu Set up...")
             time.sleep(0.6)
             return
         else:
@@ -7001,7 +6937,6 @@ def menu_schedule():
             msg_done("Đã tắt toàn bộ hẹn giờ.")
             wait_enter()
         elif sub == "0":
-            msg_info("Quay lại menu Cài đặt...")
             time.sleep(0.6)
             return
         else:
@@ -7024,7 +6959,6 @@ def menu_alias():
         print(f" {C.RED}[0] Quay lại{C.R}")
         c = input("Chọn tab để đặt / đổi biệt danh (số): ").strip()
         if c == "0":
-            msg_info("Quay lại menu Set up...")
             time.sleep(0.6)
             return
         if not (c.isdigit() and 1 <= int(c) <= len(packages)):
@@ -7041,7 +6975,7 @@ def menu_alias():
             save_config_file()
             msg_done(f"Đã xóa biệt danh của {p}.")
         else:
-            msg_cancel("Không thay đổi.")
+            pass
         wait_enter()
 
 # ==================== KIỂM TRA MẠNG (bật / tắt) ====================
@@ -7062,7 +6996,6 @@ def setup_net_check():
     elif sub == "2":
         NET_CHECK = False
     elif sub == "3":
-        msg_info("Đang ping 8.8.8.8...")
         if is_online():
             msg_done("Có kết nối Internet.")
         else:
@@ -7070,11 +7003,9 @@ def setup_net_check():
         wait_enter()
         return
     elif sub == "0":
-        msg_cancel("Đã quay lại menu Cài đặt.")
         time.sleep(0.8)
         return
     else:
-        msg_cancel("Lựa chọn không hợp lệ, không có gì thay đổi.")
         time.sleep(1.2)
         return
     save_config_file()
@@ -7143,7 +7074,6 @@ def do_auto_restart(packages):
     reset = AUTO_RESTART_ACTION == "reset"
     what = AUTO_RESTART_ACTIONS.get(AUTO_RESTART_ACTION, "")
     ram_before = get_free_ram_mb()
-    print(f"\033[1;33m[*] Đã treo liên tục {AUTO_RESTART_HOURS} giờ → tự động restart: {what}...\033[0m")
     log_event("AUTO_RESTART", detail=f"Sau {AUTO_RESTART_HOURS}h treo liên tục: {what} ({len(packages)} tab)")
     notify_async("restart", "Tự động restart",
                  f"Tool đã treo liên tục **{AUTO_RESTART_HOURS} giờ**, đang tự động: **{what}**.",
@@ -7272,7 +7202,6 @@ def apply_gfx_on_start(packages):
         return
     if not root_mode():
         return
-    print(f"\033[1;33m[*] Graphics Optimizer: {gfx_settings_label()} cho {len(packages)} tab...\033[0m")
     n_ok = 0
     for pkg in packages:
         if stop_start:
@@ -7324,7 +7253,6 @@ def menu_low_graphics():
                 msg_err(f"Không thấy package nào khớp '{PACKAGE_PREFIX}'.")
                 wait_enter()
                 continue
-            msg_info("Đang đọc trạng thái đồ họa các tab...")
             infos = {p: gfx_read(p) for p in packages}
             for p in packages:
                 i = infos[p]
@@ -7337,12 +7265,10 @@ def menu_low_graphics():
                 wait_enter()
                 continue
             if not have:
-                msg_warn("Chưa tab nào có file cài đặt. Hãy mở các tab 1 lần rồi quay lại.")
                 wait_enter()
                 continue
             action = f"ÁP DỤNG ({gfx_settings_label()})" if sub == "1" else "KHÔI PHỤC cài đặt gốc"
             if input(f"Bấm Enter để {action} cho {len(have)} tab (nhập 0 để quay lại): ").strip() == "0":
-                msg_cancel("Đã hủy, không thay đổi gì.")
                 wait_enter()
                 continue
             n_ok = 0
@@ -7653,11 +7579,8 @@ def menu_classify_errors():
         wait_enter()
         return
     if input("Nhờ AI phân tích nguyên nhân cho các nhóm này? (y/n): ").strip().lower() not in ("y", "yes"):
-        msg_cancel("Chỉ xem thống kê trên máy.")
         wait_enter()
         return
-    print(f"\n {C.YEL}Sẽ gửi tối đa 30 mẫu lỗi (đã ẩn cookie, token, khóa) lên dịch vụ AI.{C.R}")
-    msg_info("Đang phân tích...")
     out, err = ai_classify_groups(groups)
     if out:
         for line in out:
@@ -7889,12 +7812,10 @@ def menu_stability_stats():
     section_title("THỐNG KÊ ĐỘ ỔN ĐỊNH")
     entries = read_log_entries()
     if not entries:
-        msg_warn("Chưa có log nào để thống kê. Hãy Start tool một thời gian rồi xem lại mục này.")
         wait_enter()
         return
     per_pkg, per_game = build_stability_stats(entries)
     if not per_pkg and not per_game:
-        msg_warn(f"Log có {len(entries)} dòng nhưng chưa ghi nhận lần Kick/Rớt/Treo nào.")
         wait_enter()
         return
     w = ui_width()
@@ -8108,7 +8029,6 @@ def _print_syntax_report(text):
     if not warns:
         print(f" {C.GRN}✓ Không phát hiện lỗi ({tool}){C.R}")
     else:
-        print(f" {C.YEL}[!] Cảnh báo ({tool}):{C.R}")
         for w in warns[:5]:
             print(f"     - {w}")
 
@@ -8179,7 +8099,6 @@ def print_script_preview(text):
     if not hits:
         print(f" {C.GRN}✓ Không thấy mẫu rủi ro đã biết. Vẫn nên đọc qua nguồn trước khi chạy.{C.R}")
     else:
-        print(f" {C.YEL}[!] Có dấu hiệu cần kiểm tra:{C.R}")
         for label, found in hits:
             where = ", ".join(str(n) for n in found[:5]) + (" ..." if len(found) > 5 else "")
             print(f"     - {label} (dòng {where})")
@@ -8208,12 +8127,10 @@ def _lib_add_script():
         invalid_choice(how)
         return
     if not text or not text.strip():
-        msg_cancel("Nội dung trống, đã hủy.")
         wait_enter()
         return
     hits = print_script_preview(text)
     if hits and ask("Vẫn lưu script này? (y/n):").strip().lower() not in ("y", "yes"):
-        msg_cancel("Đã hủy, chưa lưu.")
         wait_enter()
         return
     name = ask("Tên script (Enter để dùng tên gợi ý):").strip() or suggested or f"script_{datetime.now():%Y%m%d_%H%M%S}"
@@ -8272,14 +8189,14 @@ def _lib_script_menu(idx):
             for line in text.splitlines()[:30]:
                 print(f"  {C.GRY}{line}{C.R}")
             if not text.strip():
-                msg_warn("Script trống hoặc file bị mất.")
+                pass
             wait_enter()
         elif sub == "2":
             text = _read_multiline()
             if not text.strip():
-                msg_cancel("Nội dung trống, giữ nguyên.")
+                pass
             elif print_script_preview(text) and ask("Lưu nội dung mới có cảnh báo này? (y/n):").strip().lower() not in ("y", "yes"):
-                msg_cancel("Đã giữ nội dung cũ.")
+                pass
             else:
                 _lib_write(e, text)
                 e["size"] = len(text)
@@ -8314,7 +8231,6 @@ def _lib_manage():
         section_title("QUẢN LÝ SCRIPT")
         data = _lib_load()
         if not data["scripts"]:
-            msg_warn("Thư viện trống. Chọn [1] Thêm script mới trước.")
             wait_enter()
             return
         _lib_print_list(data)
@@ -8335,7 +8251,6 @@ def _lib_assign():
         section_title("GÁN SCRIPT CHO GAME")
         data = _lib_load()
         if not data["scripts"]:
-            msg_warn("Thư viện trống. Chọn [1] Thêm script mới trước.")
             wait_enter()
             return
         _lib_print_list(data)
@@ -8391,11 +8306,9 @@ def _lib_assign():
                     if gid not in games:
                         games.append(gid); changed = True
                     else:
-                        msg_info("Đã có trong danh sách.")
                         time.sleep(0.8)
             elif sub == "4":
                 if not games:
-                    msg_info("Chưa có game nào để gỡ.")
                     time.sleep(0.8)
                 else:
                     pick = ask(f"Số thứ tự (1-{len(games)}):").strip()
@@ -8424,7 +8337,6 @@ def _lib_sync():
     section_title("SYNC SCRIPT SANG EXECUTOR / TAB")
     data = _lib_load()
     if not data["scripts"]:
-        msg_warn("Thư viện trống. Chọn [1] Thêm script mới trước.")
         wait_enter()
         return
     cur = str(TARGET_LINK or "")
@@ -8434,12 +8346,10 @@ def _lib_sync():
     print(f" {C.GRY}Game đang chọn:{C.R} {SELECTED_GAME_NAME or 'chưa chọn'}")
     print(f" {C.GRY}Sẽ sync:{C.R} {len(chosen)} script · {C.GRY}Không sync:{C.R} {len(others)} script (tắt hoặc gán game khác)\n")
     if not chosen:
-        msg_warn("Không có script nào áp dụng cho game này.")
         wait_enter()
         return
     risky = [(e, h) for e, h in ((e, script_risk_scan(_lib_read(e))) for e in chosen) if h]
     if risky:
-        print(f" {C.YEL}[!] Các script sau có dấu hiệu cần kiểm tra:{C.R}")
         for e, h in risky:
             print(f"     - {e['name']}: " + "; ".join(label for label, _ in h))
         print()
@@ -8448,7 +8358,6 @@ def _lib_sync():
             chosen = [e for e in chosen if e["id"] not in risky_ids]
             others = others + [e for e, _ in risky]
             if not chosen:
-                msg_cancel("Không còn script nào để sync.")
                 wait_enter()
                 return
     dirs = autoexec_dirs()
@@ -8457,7 +8366,6 @@ def _lib_sync():
         print(f"   {C.GRY}· {_d}{C.R}")
     print()
     if ask("Tiếp tục sync? (y/n):").strip().lower() not in ("y", "yes"):
-        msg_cancel("Đã hủy sync.")
         wait_enter()
         return
     ok, total = 0, 0
@@ -8476,7 +8384,7 @@ def _lib_sync():
     if total and ok == total:
         msg_done(f"Sync xong: {ok}/{total} file vào {len(dirs)} thư mục.")
     else:
-        msg_warn(f"Sync một phần: {ok}/{total} file thành công. Kiểm tra quyền ghi bộ nhớ (hoặc root).")
+        pass
     wait_enter()
 
 # ---------- kiểm tra syntax ----------
@@ -8485,7 +8393,6 @@ def _lib_check_syntax():
     section_title("KIỂM TRA SYNTAX LUA")
     data = _lib_load()
     if not data["scripts"]:
-        msg_warn("Thư viện trống.")
         wait_enter()
         return
     _lib_print_list(data)
@@ -8507,7 +8414,6 @@ def _lib_check_syntax():
         e = data["scripts"][i]
         warns, tool = lua_check(_lib_read(e))
         if warns:
-            print(f" {C.YEL}[!]{C.R} {e['name']}")
             for w in warns[:5]:
                 print(f"       - {w}")
         else:
@@ -8541,7 +8447,6 @@ def _lib_stats():
     for e in scripts:
         if lua_check(_lib_read(e))[0]:
             bad.append(e["name"])
-    print(f"\n Script có cảnh báo cú pháp: {C.YEL if bad else C.GRN}{len(bad)}/{len(scripts)}{C.R}")
     for n in bad[:10]:
         print(f"   - {n}")
     ls = data.get("last_sync")
@@ -8635,11 +8540,9 @@ def _pick_executor_targets(kind):
     for i in picks:
         label, target = rows[i]
         if not target:
-            msg_warn(f"{label}: không hỗ trợ lưu script, bỏ qua.")
             continue
         if kind == "autoexec" and not _path_exists(target):
             if not _mkdir_target(target):
-                msg_warn(f"{label}: không tạo được thư mục autoexec, bỏ qua.")
                 continue
         chosen.append((label, target))
     return chosen
@@ -8685,12 +8588,10 @@ def _lib_add_to_executor_scripts():
         invalid_choice(how)
         return
     if not text or not text.strip():
-        msg_cancel("Nội dung trống, đã hủy.")
         wait_enter()
         return
     hits = print_script_preview(text)
     if hits and ask("Vẫn lưu script này? (y/n):").strip().lower() not in ("y", "yes"):
-        msg_cancel("Đã hủy, chưa ghi.")
         wait_enter()
         return
     name = ask("Tên script (Enter để dùng tên gợi ý):").strip() or suggested or f"script_{datetime.now():%Y%m%d_%H%M%S}"
@@ -8712,7 +8613,7 @@ def _lib_add_to_executor_scripts():
     if ok == len(found):
         msg_done(f"Đã ghi '{fname}' vào {ok} mục scripts.")
     elif ok:
-        msg_warn(f"Ghi được {ok}/{len(found)} mục scripts.")
+        pass
     else:
         msg_err("Không ghi được vào mục scripts nào. Kiểm tra quyền bộ nhớ (hoặc root).")
     _print_syntax_report(text)
@@ -8790,7 +8691,6 @@ def menu_game_profiles():
                     "target_fps": GFX_FPS,
                     "server_hop_enabled": SERVER_HOP,
                 }
-                msg_info(f"Đã tạo hồ sơ cho '{game_name}'")
 
             profile = GAME_PROFILES[game_name]
 
@@ -8828,7 +8728,6 @@ def menu_game_profiles():
 
         elif sub == "2":
             if not GAME_PROFILES:
-                msg_warn("Chưa có hồ sơ game nào để xóa.")
                 wait_enter()
                 continue
             game_name = input("Nhập tên game để xóa hồ sơ: ").strip()
@@ -8837,22 +8736,19 @@ def menu_game_profiles():
                 msg_done(f"Đã xóa hồ sơ '{game_name}'")
                 save_config_file()
             else:
-                msg_warn(f"Không tìm thấy hồ sơ '{game_name}'")
+                pass
             wait_enter()
 
         elif sub == "3":
             if not GAME_PROFILES:
-                msg_warn("Chưa có hồ sơ nào để sao chép.")
                 wait_enter()
                 continue
             source = input("Sao chép từ game: ").strip()
             if source not in GAME_PROFILES:
-                msg_warn(f"Không tìm thấy hồ sơ '{source}'")
                 wait_enter()
                 continue
             dest = input("Sao chép tới game: ").strip()
             if not dest:
-                msg_cancel("Hủy sao chép")
                 wait_enter()
                 continue
             GAME_PROFILES[dest] = GAME_PROFILES[source].copy()
@@ -8861,7 +8757,6 @@ def menu_game_profiles():
             wait_enter()
 
         elif sub == "0":
-            msg_info("Quay lại menu Set up...")
             time.sleep(0.6)
             return
         else:
@@ -8876,7 +8771,6 @@ def menu_executor_binding():
 
         packages = sorted(get_all_packages())
         if not packages:
-            msg_warn("Chưa cài tab clone nào. Dùng mục 'Mở tab clone' trước.")
             wait_enter()
             return
 
@@ -8890,7 +8784,6 @@ def menu_executor_binding():
             short = ALIASES.get(pkg) or _short_pkg(pkg)
             exe = EXECUTOR_BINDING.get(pkg, "—")
             exe_display = exe if exe in EXECUTOR_NAMES else "—"
-            print(f"  {C.LPUR}{i:>2}.{C.R} {C.WHT}{short:20}{C.R} → {C.YEL}{exe_display}{C.R}")
         print()
 
         print(f"\033[1;37m[Nhập số tab] [Nhập số executor] để gán (vd: 1 2 = Tab 1 dùng Codex){C.R}")
@@ -8898,7 +8791,6 @@ def menu_executor_binding():
         sub = input("Chọn: ").strip()
 
         if sub == "0":
-            msg_info("Quay lại menu chính...")
             time.sleep(0.6)
             return
 
@@ -9011,7 +8903,6 @@ def refresh_remote_games():
     return added
 
 def announce_choice(key, label):
-    print(f"\n {C.YEL}▸ Đã chọn [{key}] {label}{C.R}")
     time.sleep(0.6)
 
 def invalid_choice(text):
@@ -9150,7 +9041,6 @@ def search_packages_by_keyword():
     packages = list_all_packages()
     if not packages:
         clear_screen()
-        msg_warn("Không đọc được danh sách package (cần quyền shell/pm).")
         wait_enter()
         return
     if not sys.stdin.isatty():
@@ -9358,7 +9248,6 @@ def search_packages_by_keyword():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
     print()
     if state["copy_fail"]:
-        print(f"{C.YEL}Danh sách đã chọn:{C.R}")
         for p in state["copy_fail"]:
             print(f"  {p}")
 
@@ -9479,16 +9368,14 @@ def menu_choose_game_with_package():
                     wait_enter()
                     continue
                 if ok_g is None:
-                    msg_warn(info_g)
+                    pass
                 else:
                     msg_done(info_g)
                 game_name = name_g or (f"Game ID: {game_id}" if game_id.isdigit() else "Server VIP Custom")
             else:
-                msg_cancel("Chưa nhập ID/link, hủy.")
                 wait_enter()
                 continue
         else:
-            msg_cancel("Lựa chọn không hợp lệ, hủy.")
             wait_enter()
             continue
 
@@ -9501,7 +9388,6 @@ def menu_choose_game_with_package():
 
         packages = sorted(list_installed_packages())
         if not packages:
-            msg_warn("Chưa tìm thấy package nào. Hãy kiểm tra lại Package Prefix ở mục [3].")
             save_config_file()
             wait_enter()
             continue
@@ -9574,7 +9460,6 @@ def menu_key_injector():
         print(f"{C.RED}[0] Quay lại menu Set up{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
-            msg_info("Quay lại menu Set up...")
             time.sleep(0.6)
             return
         if not root_mode() and sub in ("1", "2", "3"):
@@ -9593,7 +9478,7 @@ def menu_key_injector():
                     mark = f"{C.GRN}✓{C.R}" if c in cur else " "
                     print(f" {C.LPUR}{i:>2}.{C.R} {mark} {C.WHT}{clip(c, 52)}{C.R} {C.GRY}{get_file_size(c)}B{C.R}")
             else:
-                msg_warn("Không thấy file nào có tên chứa key / token / license (mở Client và nhập key 1 lần trước, hoặc nhập đường dẫn tay).")
+                pass
             print(f" {C.GRY}Nhập số file cần giữ (cách nhau dấu cách) · p = nhập đường dẫn tay · Enter = hủy{C.R}")
             raw = input("Chọn: ").strip().lower()
             chosen = []
@@ -9610,7 +9495,6 @@ def menu_key_injector():
                 else:
                     msg_err("Số không hợp lệ.")
             if not chosen:
-                msg_cancel("Không thay đổi.")
                 wait_enter()
                 continue
             KEY_FILES[p] = sorted(set(cur) | set(chosen))
@@ -9627,7 +9511,7 @@ def menu_key_injector():
                         ch, _sk = key_save(o)
                         msg_ok(f"{tab_label(o)}: theo dõi {len(KEY_FILES[o])} file, lưu {ch} file.")
                     else:
-                        msg_info(f"{tab_label(o)}: chưa có file tương ứng (nhập key ở tab đó rồi chạy lại mục này).")
+                        pass
                 save_config_file()
             wait_enter()
         elif sub == "2":
@@ -9638,14 +9522,14 @@ def menu_key_injector():
                     tot += ch
                     (msg_ok if ch or not sk else msg_warn)(f"{tab_label(p)}: lưu {ch} file mới/đổi, bỏ qua {sk}.")
             if not KEY_FILES:
-                msg_warn("Chưa chọn file key nào (dùng mục 1 trước).")
+                pass
             else:
                 msg_done(f"Hoàn tất lưu vault ({tot} file mới/đổi).")
             wait_enter()
         elif sub == "3":
             targets = [p for p in packages if idx.get(p)]
             if not targets:
-                msg_warn("Vault đang trống (dùng mục 1 / 2 để lưu key trước).")
+                pass
             elif input(f"Các tab đang chạy sẽ bị tắt, ghi đè file key của {len(targets)} tab. Tiếp tục? (y/n): ").strip().lower() == "y":
                 for p in targets:
                     close_game(p)
@@ -9654,7 +9538,7 @@ def menu_key_injector():
                         msg_err(f"{tab_label(p)}: không chèn được (kiểm tra root / thư mục dữ liệu của app).")
                 msg_done("Đã chèn key từ vault. Mở lại tab bằng Start hoặc mục [8].")
             else:
-                msg_cancel("Đã hủy.")
+                pass
             wait_enter()
         elif sub == "4":
             KEY_AUTO = not KEY_AUTO
@@ -9674,7 +9558,7 @@ def menu_key_injector():
                 save_config_file()
                 msg_done("Đã xóa vault và bỏ theo dõi key của tab này.")
             else:
-                msg_cancel("Đã hủy.")
+                pass
             wait_enter()
         else:
             invalid_choice(sub)
@@ -9685,9 +9569,7 @@ def screen_diagnose():
         return
     packages = [p for p in list_installed_packages() if is_app_running(p)]
     if not packages:
-        msg_warn("Không có tab nào đang chạy. Hãy Start hoặc mở tab clone trước.")
         return
-    msg_info("Đang đọc cửa sổ và chụp màn hình...")
     snap = window_snapshot(packages)
     frame = capture_frame()
     if frame is None:
@@ -9696,16 +9578,14 @@ def screen_diagnose():
         msg_ok(f"Chụp được khung {frame[0]}x{frame[1]}.")
     for p in packages:
         if p in snap["anr"]:
-            msg_warn(f"{tab_label(p)}: đang hiện hộp thoại Not Responding.")
+            pass
         rect = snap["rects"].get(p)
         if not rect and snap["focus"] != p:
-            msg_info(f"{tab_label(p)}: không xác định được cửa sổ (tab không có focus) nên bỏ qua.")
             continue
         if frame is None:
             continue
         res = analyze_frame(frame, rect)
         if not res:
-            msg_info(f"{tab_label(p)}: vùng cửa sổ quá nhỏ.")
             continue
         verdict = {"white": "TRẮNG kẹt", "black": "ĐEN kẹt", "ok": "bình thường"}[res["kind"]]
         print(f" {dot(res['kind'] == 'ok')} {C.WHT}{tab_label(p)}{C.R}: {verdict} {C.GRY}(độ sáng {res['median']}, đồng màu {res['uniform']}){C.R}")
@@ -9725,7 +9605,6 @@ def menu_screen_guard():
         print(f"{C.RED}[0] Quay lại menu Set up{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
-            msg_info("Quay lại menu Set up...")
             time.sleep(0.6)
             return
         if sub == "1":
@@ -9930,10 +9809,8 @@ def menu_import_config():
     print(f" {C.GRY}Xuất từ bản:{C.R} {payload.get('tool_version', '?')}  {C.GRY}lúc{C.R} {payload.get('exported_at', '?')}")
     print(f" {C.GRY}Số mục sẽ nhập:{C.R} {len(incoming)}")
     if payload.get("tool_version") != VERSION:
-        print(f" {C.YEL}Lưu ý: file xuất từ bản khác với bản đang dùng ({VERSION}).{C.R}")
-    print(f" {C.YEL}Cấu hình hiện tại sẽ được thay bằng nội dung file. Bản cũ được lưu thành .bak.{C.R}\n")
+        pass
     if ask("Nhập cấu hình này? (y/n):").strip().lower() not in ("y", "yes"):
-        msg_cancel("Đã hủy nhập cấu hình.")
         wait_enter()
         return
     current = {}
@@ -9980,11 +9857,9 @@ def menu_reset_config():
 
     clear_screen()
     section_title("RESET CẤU HÌNH")
-    print(f" {C.YEL}⚠ Các cài đặt sau sẽ bị xóa / đặt lại:{C.R}\n")
 
     def _show(label, val, default):
         changed = f"{C.RED}✗{C.R}" if str(val) != str(default) else f"{C.GRY}–{C.R}"
-        print(f" {changed} {C.WHT}{label}:{C.R} {C.YEL}{val}{C.R}  {C.GRY}→ {default}{C.R}")
 
     _show("Package prefix",   PACKAGE_PREFIX,       "com.roblox")
     _show("Package mode",     PACKAGE_MODE,          "prefix")
@@ -9998,15 +9873,13 @@ def menu_reset_config():
     _show("Auto backup",      AUTO_BACKUP,           True)
 
     if PROFILES:
-        print(f" {C.RED}✗{C.R} {C.WHT}Profiles:{C.R} {C.YEL}{len(PROFILES)} profile{C.R}  {C.GRY}→ xóa hết{C.R}")
+        pass
     if SCHEDULE:
-        print(f" {C.RED}✗{C.R} {C.WHT}Schedule:{C.R} {C.YEL}{len(SCHEDULE)} lịch{C.R}  {C.GRY}→ xóa hết{C.R}")
+        pass
     if VIP_SERVERS:
-        print(f" {C.RED}✗{C.R} {C.WHT}VIP Servers:{C.R} {C.YEL}{len(VIP_SERVERS)} server{C.R}  {C.GRY}→ xóa hết{C.R}")
+        pass
 
-    print(f"\n {C.YEL}File config cũ sẽ được lưu thành .bak trước khi reset.{C.R}\n")
     if ask("Xác nhận reset? (y/n):").strip().lower() not in ("y", "yes"):
-        msg_cancel("Đã hủy.")
         wait_enter()
         return
 
@@ -10186,7 +10059,6 @@ def menu_search_package():
         if query == "0" or query == "":
             return
 
-        print(f"\n{C.YEL}Đang tìm kiếm...{C.R}")
         results = search_packages_by_name(query)
 
         clear_screen()
@@ -10224,7 +10096,7 @@ def menu_search_package():
                 save_config_file()
                 msg_done(f"Đã thêm {len(added)} package vào Custom List.")
             else:
-                msg_info("Tất cả đã có trong Custom List rồi.")
+                pass
             wait_enter()
         elif cmd == "s":
             raw = ask("Nhập số thứ tự (vd: 1 2 3):").strip()
@@ -10239,7 +10111,7 @@ def menu_search_package():
                 save_config_file()
                 msg_done(f"Đã thêm: {', '.join(added)}")
             else:
-                msg_info("Không có package mới nào được thêm.")
+                pass
             wait_enter()
         else:
             invalid_choice(cmd)
@@ -10324,7 +10196,6 @@ def menu_custom_packages():
             else:
                 _valid_pkg = bool(re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+", pkg))
                 if not _valid_pkg:
-                    print(f"{C.YEL}⚠ Format không hợp lệ: '{pkg}'{C.R}")
                     print(f"{C.GRY}Package name phải có dạng: com.example.app{C.R}\n")
                     _confirm = ask("Vẫn thêm? (y/n):").strip().lower()
                     if _confirm != "y":
@@ -10382,7 +10253,7 @@ def menu_setup_package_prefix():
         save_config_file()
         msg_done(f"Nhập package thành công: {PACKAGE_PREFIX}")
     else:
-        msg_info(f"Giữ nguyên: {PACKAGE_PREFIX}")
+        pass
     wait_enter()
 
 def menu_choose_run_mode():
@@ -10425,7 +10296,7 @@ def menu_run_count_selective(packages_list):
             print(f" {C.LPUR}[{i:2}]{C.R} {pkg}")
         print()
         if SELECTED_PACKAGES:
-            print(f"{C.YEL}Đang chọn chạy: {len(SELECTED_PACKAGES)} package{C.R}")
+            pass
         else:
             print(f"{C.GRY}Đang chọn chạy: tất cả package{C.R}")
         print(f"\n{C.LPUR}[1]{C.R} {C.WHT}Custom Count Mode{C.R}")
@@ -10478,7 +10349,6 @@ def menu_change_id():
         print(f" {C.GRY}ID hiện tại:{C.R} {C.WHT}{cur}{C.R}")
         orig = ANDROID_ID_ORIGINAL or "(chưa lưu — sẽ lưu ở lần đổi đầu tiên)"
         print(f" {C.GRY}ID gốc:{C.R}     {C.WHT}{orig}{C.R}")
-        print(f" {C.YEL}Lưu ý: Android ID là của cả máy, đổi xong nên khởi động lại các tab để nhận ID mới.{C.R}\n")
         print(f" {C.LPUR}[1]{C.R} {C.WHT}Đổi ngẫu nhiên{C.R}")
         print(f" {C.LPUR}[2]{C.R} {C.WHT}Nhập ID thủ công{C.R} {C.GRY}(16 ký tự hex: 0-9, a-f){C.R}")
         print(f" {C.LPUR}[3]{C.R} {C.WHT}Khôi phục ID gốc{C.R}")
@@ -10516,16 +10386,14 @@ def menu_change_id():
             continue
 
         if cur == new_id:
-            msg_info("ID này đã đang dùng rồi.")
             wait_enter()
             continue
-        msg_info(f"Đang áp dụng ID: {new_id}")
         ok, now_id = _apply_android_id(new_id)
         if ok:
             _record_android_id_change(cur if cur != "(không đọc được)" else "", new_id)
             msg_done(f"Đã đổi Android ID thành công: {new_id}")
         else:
-            msg_warn(f"Lệnh đã gửi nhưng ID đọc lại là '{now_id}' (ROM có thể không cho phép đổi).")
+            pass
         wait_enter()
 
 def send_test_webhook(url, content, embed_title, embed_desc):
@@ -10587,7 +10455,6 @@ def menu_webhook():
         DISCORD_UID = uid
         save_config_file()
         mention = f"<@{DISCORD_UID}>" if DISCORD_UID else "@everyone"
-        print(f" {C.YEL}[*] Đang gửi tin thử tới Discord...{C.R}")
         ok_test, info = send_test_webhook(
             WEBHOOK_URL, mention, "Webhook đã kết nối",
             "PAIN TOOL REJOIN VIP: tin thử từ menu Set Webhook URL.")
@@ -10608,7 +10475,6 @@ def menu_clear_cache():
     clear_screen()
     section_title("XÓA CACHE")
     packages = get_all_packages()
-    msg_info(f"Đang xóa cache của {len(packages)} tab và dọn RAM...")
     for pkg in packages:
         sh(f"rm -rf /data/data/{pkg}/cache/* /data/data/{pkg}/code_cache/*")
     sh("sync && echo 3 > /proc/sys/vm/drop_caches")
@@ -10638,7 +10504,6 @@ def menu_open_clones():
             for idx_b, pkg in enumerate(batch):
                 open_tab_only(pkg, f"[{i + idx_b + 1}/{total_clones}]")
             if i + batch_size < total_clones:
-                print(f"\033[1;33m[*] Chờ 15 giây để mở nhóm tiếp theo...\033[0m")
                 time.sleep(15)
     else:
         for idx, pkg in enumerate(found_pkgs):
@@ -10647,7 +10512,7 @@ def menu_open_clones():
                 time.sleep(CLONE_LAUNCH_DELAY)
     msg_done(f"Hoàn tất mở tab clone: {stats['ok']}/{len(found_pkgs)} tab đã gửi lệnh mở thành công.")
     if stats["fail"]:
-        msg_warn(f"{stats['fail']} tab không mở được (xem thông báo phía trên).")
+        pass
     wait_enter()
 
 def menu_ai_setup():
@@ -11070,7 +10935,6 @@ cd "{cd_dir}"
                         f.write(script_content)
                     os.chmod(BOOT_SCRIPT, 0o700)
                     msg_ok("Đã bật tự động start! Tool sẽ tự chạy khi UgPhone khởi động lại.")
-                    print(f"\n {C.YEL}Lưu ý:{C.R}")
                     print(f" {C.GRY}1. Đảm bảo Termux:Boot đã được cài từ F-Droid hoặc Play Store.{C.R}")
                     print(f" {C.GRY}2. Mở Termux:Boot ít nhất 1 lần để kích hoạt.{C.R}")
                     print(f" {C.GRY}3. Key sẽ được tự động nhập vì đã lưu từ lần đăng nhập trước.{C.R}")
