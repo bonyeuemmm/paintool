@@ -3041,7 +3041,7 @@ def send_detailed_alert(level, title, description, pkg=None, reason=None, action
         }
 
         if level in PING_LEVELS and not in_quiet_hours():
-            mention = "@everyone" + (f" <@{DISCORD_UID}>" if DISCORD_UID else "")
+            mention = ping_mention()
             payload_dict["content"] = mention
             payload_dict["allowed_mentions"] = {"parse": ["everyone", "users"]}
 
@@ -3070,7 +3070,7 @@ def send_detailed_alert(level, title, description, pkg=None, reason=None, action
                 "embeds": [fallback_embed],
             }
             if level in PING_LEVELS:
-                fb_payload["content"] = "@everyone" + (f" <@{DISCORD_UID}>" if DISCORD_UID else "")
+                fb_payload["content"] = ping_mention()
                 fb_payload["allowed_mentions"] = {"parse": ["everyone", "users"]}
             run_cmd([
                 "curl", "-s", "-X", "POST", WEBHOOK_URL,
@@ -4537,12 +4537,13 @@ def preflight_package_rows():
         info = PACKAGE_GAMES.get(p) or {}
         rows.append({"pkg": p, "installed": p in on_device, "user": ACCOUNTS.get(p, ""),
                      "game_id": info.get("game_id", ""),
-                     "game": info.get("game_name") or (SELECTED_GAME_NAME if info.get("game_id") else "")})
+                     "game": info.get("game_name") or ""})
     return rows
 
-def preflight_items():
+def preflight_items(rows=None):
     """Các mục cảnh báo/lỗi (không còn trạng thái Executor). Trạng thái: ok / warn / fail."""
-    rows = preflight_package_rows()
+    if rows is None:
+        rows = preflight_package_rows()
     n_ok = sum(1 for r in rows if r["installed"])
     n_bound = sum(1 for r in rows if r["installed"] and r["game_id"])
     items = []
@@ -4553,7 +4554,7 @@ def preflight_items():
     if not SELECT_ALL_PACKAGES and not SELECTED_PACKAGES:
         items.append(("fail", True, "Chưa chọn package nào để chạy"))
     if not TARGET_LINK:
-        items.append(("warn", False, "Chưa chọn game: tool chỉ mở app, không vào Map"))
+        items.append(("warn", False, "Chưa chọn game · app sẽ chỉ được mở, không tự vào Map (Set up → Set up game)"))
     if not webhook_active():
         items.append(("warn", False, "Chưa cài Webhook: không nhận được cảnh báo"))
     return items
@@ -4563,7 +4564,7 @@ def preflight_gate():
     clear_screen()
     section_title("XÁC NHẬN TRƯỚC KHI START")
     rows = preflight_package_rows()
-    items = preflight_items()
+    items = preflight_items(rows)
 
     model = (f"Custom List · {len(CUSTOM_PACKAGES)} package" if PACKAGE_MODE == "custom"
              else f"Prefix · {PACKAGE_PREFIX}*")
@@ -4581,14 +4582,15 @@ def preflight_gate():
         else:
             mark, name_col = f"{C.RED}✗{C.R}", C.RED
         pkg_col = f"{name_col}{r['pkg'].ljust(30)}{C.R}"
-        user_col = f"{C.LPUR}{r['user']}{C.R}" if r["user"] else ""
+        user_txt = r["user"] or ""
+        user_col = f"{C.LPUR}{user_txt}{C.R}" + " " * max(0, 22 - len(user_txt))
         if not r["installed"]:
             game_col = f"{C.RED}chưa cài game{C.R}"
         elif not r["game_id"]:
             game_col = f"{C.YEL}chưa gán game ID{C.R}"
         else:
             game_col = f"{C.GRY}{r['game'] or 'game ' + str(r['game_id'])}{C.R}"
-        print(f"   {mark} {pkg_col} {user_col.ljust(22) if user_col else ' ' * 22} {game_col}")
+        print(f"   {mark} {pkg_col} {user_col} {game_col}")
     print()
     icon = {"ok": f"{C.GRN}✓{C.R}", "warn": f"{C.YEL}!{C.R}", "fail": f"{C.RED}✗{C.R}"}
     for status, _req, text in items:
@@ -4600,7 +4602,8 @@ def preflight_gate():
         return False
     if any(st == "warn" for st, _r, _t in items):
         return ask("Vẫn tiếp tục Start? [y/N]:").strip().lower() in ("y", "yes")
-    return True
+    ans = ask("Enter để Start · 0 để quay lại:").strip()
+    return ans != "0"
 
 def _ask_close_all_after_zero():
     """Sau khi bấm 0 để dừng Start: hỏi có tắt tất cả tab game không. Trả về mô tả để ghi nhật ký."""
@@ -5015,7 +5018,7 @@ def start_tool():
     print(f"\033[1;32m[*] Đã tìm thấy {len(packages)} bản clone ({_src}).\033[0m")
     print(f"\033[1;32m[*] Cơ chế Rejoin: {get_rejoin_mode_str()}\033[0m")
     if not TARGET_LINK:
-        print("\033[1;31m[!] Chưa chọn game (Set up > Chọn game): tool chỉ mở app, không vào Map.\033[0m")
+        print("\033[1;31m[!] Chưa chọn game · app sẽ chỉ được mở, không tự vào Map (Set up → Set up game)\033[0m")
     if (AUTO_CLEAR_DATA or AUTO_BACKUP) and not root_mode():
         print("\033[1;31m[!] Máy không có root: Auto Clear Data / Auto Backup không hoạt động.\033[0m")
     else:
@@ -6256,7 +6259,7 @@ def login_one_cookie(cookie, idx, total):
         if open_game(pkg, hard=True, enter_map=bool(game_link_for(pkg))):
             msg_ok("Đã gửi lệnh mở tab.")
             if not game_link_for(pkg):
-                msg_info("Chưa chọn game nên chỉ mở app (Set up game để tự vào Map).")
+                msg_info("Chưa chọn game · chỉ mở app, không tự vào Map (Set up → Set up game)")
         else:
             msg_err("Không mở được tab, thử mở bằng tay hoặc mục [8].")
     return True
@@ -9103,8 +9106,8 @@ def search_packages_by_keyword():
         rule = f"{C.GRY}{'─' * max(10, min(cols - 1, 60))}{C.R}"
         filt_part = f" · Lọc: {state['filt']}" if state["filt"] else ""
         rows = [
-            f"{C.WHT}TÌM KIẾM PACKAGE{C.R}",
-            rule,
+            f" {C.PUR}▌{C.R}{C.WHT} TÌM KIẾM PACKAGE{C.R}",
+            f" {C.GRY}{'─' * max(10, ui_width() - 2)}{C.R}",
             f"{C.GRY}Tổng {len(packages)} · Hiện {len(shown)} · {C.R}{C.GRN}Đã chọn {len(selected)}{C.R}"
             f"{C.GRY} · Trang {cur_page}/{pages}{filt_part}{C.R}",
             f"{C.GRY}Gõ số + Enter để chọn/bỏ chọn (vd: 1 · 1 2){C.R}",
@@ -9139,16 +9142,12 @@ def search_packages_by_keyword():
         if len(_m) > cols - 1:
             _m = _m[:cols - 2] + "…"
         rows.append(f"{msg_color}{_m}{C.R}")
-        # Vẽ đè từ đầu màn hình, mỗi dòng xóa phần thừa; không xóa cả màn hình
-        out = ["\033[H"]
-        if not state.get("inited"):
-            out = ["\033[2J\033[H"]
-            state["inited"] = True
-        for i, line in enumerate(rows):
-            out.append(line + "\033[K")
-            if i < len(rows) - 1:
-                out.append("\n")
-        out.append("\033[J")
+        # Mỗi dòng đặt tại đúng hàng, xóa hàng trước khi ghi; xóa phần còn lại bên dưới.
+        # Không dựa vào "\n" nên không bị dòng cũ của menu trước (SET UP) còn sót lại.
+        out = []
+        for i, line in enumerate(rows, 1):
+            out.append(f"\033[{i};1H\033[2K{line}")
+        out.append(f"\033[{len(rows) + 1};1H\033[J")
         sys.stdout.write("".join(out))
         sys.stdout.flush()
 
@@ -9207,6 +9206,7 @@ def search_packages_by_keyword():
         return False
 
     old_mode = None
+    clear_screen()
     try:
         tty.setcbreak(fd)
         draw()
@@ -10429,47 +10429,116 @@ def send_test_webhook(url, content, embed_title, embed_desc):
     except Exception as e:
         return False, str(e)[:80]
 
-def menu_webhook():
-    global WEBHOOK_URL
+def ping_mention():
+    """Chuỗi ping dùng chung cho cảnh báo, tin thử và màn hình Webhook: luôn @everyone, kèm UID nếu có."""
+    return "@everyone" + (f" <@{DISCORD_UID}>" if DISCORD_UID else "")
+
+def _mask_webhook(url):
+    """Che token trong URL webhook, chỉ giữ 4 ký tự cuối."""
+    parts = url.rstrip("/").split("/")
+    if len(parts) < 2:
+        return "…"
+    return "/".join(parts[:-1]) + "/…" + parts[-1][-4:]
+
+def _webhook_status_screen():
     clear_screen()
-    section_title("SET WEBHOOK URL")
+    section_title("WEBHOOK URL")
     if WEBHOOK_URL:
-        print(f"Webhook hiện tại: {WEBHOOK_URL[:35]}...")
+        print(f" {C.GRY}Trạng thái  {C.R}{C.GRN}● Đã cài{C.R}")
+        print(f" {C.GRY}URL         {C.R}{C.WHT}{_mask_webhook(WEBHOOK_URL)}{C.R}")
     else:
-        print(f" {C.GRY}Chưa cài Webhook. Tool sẽ không gửi được báo cáo / cảnh báo / Send Text cho tới khi bạn nhập ở đây.{C.R}")
-    new_webhook = input("Nhập URL Discord Webhook (Để trống để xóa Webhook): ").strip()
-    if new_webhook and not new_webhook.lower().startswith(("https://", "http://")):
-        msg_err("URL webhook phải bắt đầu bằng https://  — giữ nguyên cấu hình cũ.")
+        print(f" {C.GRY}Trạng thái  {C.R}{C.GRY}○ Chưa cài{C.R}")
+        print(f" {C.GRY}Tool chưa gửi được báo cáo, cảnh báo hay Send Text.{C.R}")
+    print(f" {C.GRY}Ping        {C.R}{C.WHT}{ping_mention()}{C.R}")
+    print()
+    print(f"{C.LPUR}[1]{C.R} {C.WHT}Thêm/đổi webhook{C.R}")
+    print(f"{C.LPUR}[2]{C.R} {C.WHT}Thêm/đổi UID Discord{C.R}")
+    print(f"{C.LPUR}[3]{C.R} {C.WHT}Gửi tin thử{C.R}")
+    print(f"{C.LPUR}[4]{C.R} {C.WHT}Xóa webhook{C.R}")
+    print(f"{C.RED}[0] Quay lại{C.R}")
+
+def _webhook_set_url():
+    global WEBHOOK_URL
+    url = ask("URL webhook Discord (Enter để hủy):").strip()
+    if not url:
+        print(f" {C.GRY}Đã hủy, giữ nguyên webhook.{C.R}")
         wait_enter()
         return
-    WEBHOOK_URL = new_webhook
+    if not url.lower().startswith(("https://", "http://")):
+        msg_err("URL webhook phải bắt đầu bằng https://. Giữ nguyên cấu hình cũ.")
+        wait_enter()
+        return
+    WEBHOOK_URL = url
     save_config_file()
-    if WEBHOOK_URL:
-        global DISCORD_UID
-        _prev_uid = DISCORD_UID
-        uid = input("Nhập Discord ID để ping (Enter = @everyone): ").strip()
-        if uid:
-            uid = parse_discord_uid(uid) or ""
-            if not uid:
-                msg_err("Discord ID không hợp lệ (cần 17–20 chữ số, hoặc dạng <@id>). Sẽ ping @everyone.")
-        DISCORD_UID = uid
-        save_config_file()
-        mention = f"<@{DISCORD_UID}>" if DISCORD_UID else "@everyone"
-        ok_test, info = send_test_webhook(
-            WEBHOOK_URL, mention, "Webhook đã kết nối",
-            "PAIN TOOL REJOIN VIP: tin thử từ menu Set Webhook URL.")
-        if ok_test:
-            msg_done(f"Gửi tin thử thành công ({info}).")
-        else:
-            msg_err(f"Gửi tin thử thất bại ({info}). Kiểm tra lại URL webhook.")
-        msg_done("Đã cập nhật Webhook thành công!")
-        print(f" {C.GRY}Webhook: {WEBHOOK_URL[:35]}...{C.R}")
-        print(f" {C.GRY}Ping: {mention}{C.R}")
-        print(f" {C.GRY}Báo cáo ảnh chụp màn hình mỗi 5 phút sẽ chạy khi bạn bấm Start.{C.R}")
-    else:
-        msg_done("Đã xóa Webhook thành công.")
-        print(f" {C.GRY}Không có webhook thì tool không gửi báo cáo và không chụp ảnh màn hình.{C.R}")
+    msg_done("Đã lưu webhook. Chọn [3] để gửi tin thử.")
     wait_enter()
+
+def _webhook_set_uid():
+    global DISCORD_UID
+    print(f" {C.GRY}Hiện tại: {ping_mention()}{C.R}")
+    raw = ask("Discord ID để ping (a = @everyone, Enter = giữ nguyên):").strip()
+    if not raw:
+        print(f" {C.GRY}Giữ nguyên cấu hình ping.{C.R}")
+    elif raw.lower() == "a":
+        DISCORD_UID = ""
+        save_config_file()
+        msg_done("Sẽ ping @everyone.")
+    else:
+        uid = parse_discord_uid(raw) or ""
+        if not uid:
+            msg_err("Discord ID không hợp lệ (cần 17–20 chữ số, hoặc dạng <@id>). Giữ nguyên cấu hình cũ.")
+        else:
+            DISCORD_UID = uid
+            save_config_file()
+            msg_done(f"Đã đặt ping: {ping_mention()}")
+    wait_enter()
+
+def _webhook_test():
+    if not WEBHOOK_URL:
+        msg_err("Chưa có webhook. Chọn [1] để thêm.")
+        wait_enter()
+        return
+    ok_test, info = send_test_webhook(
+        WEBHOOK_URL, ping_mention(), "Webhook đã kết nối",
+        "PAIN TOOL REJOIN VIP: tin thử từ menu Webhook URL.")
+    if ok_test:
+        msg_done(f"Gửi tin thử thành công ({info}).")
+    else:
+        msg_err(f"Gửi tin thử thất bại ({info}). Kiểm tra lại URL webhook.")
+    wait_enter()
+
+def _webhook_delete():
+    global WEBHOOK_URL
+    if not WEBHOOK_URL:
+        print(f" {C.GRY}Chưa có webhook để xóa.{C.R}")
+        wait_enter()
+        return
+    if ask("Xóa webhook? (y/n):").strip().lower() not in ("y", "yes"):
+        print(f" {C.GRY}Đã hủy, giữ nguyên webhook.{C.R}")
+        wait_enter()
+        return
+    WEBHOOK_URL = ""
+    save_config_file()
+    msg_done("Đã xóa webhook.")
+    print(f" {C.GRY}Không có webhook thì tool không gửi báo cáo và không chụp ảnh màn hình.{C.R}")
+    wait_enter()
+
+def menu_webhook():
+    while True:
+        _webhook_status_screen()
+        sub = ask("Chọn:").strip()
+        if sub == "0":
+            return
+        elif sub == "1":
+            _webhook_set_url()
+        elif sub == "2":
+            _webhook_set_uid()
+        elif sub == "3":
+            _webhook_test()
+        elif sub == "4":
+            _webhook_delete()
+        else:
+            invalid_choice(sub)
 
 def menu_clear_cache():
     clear_screen()
