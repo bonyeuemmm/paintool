@@ -70,6 +70,7 @@ TARGET_LINK = ""
 SELECTED_GAME_NAME = "Chưa chọn"
 WEBHOOK_URL = ""
 DISCORD_UID = ""
+DISCORD_PING_EVERYONE = False  # False = chỉ ping UID (mặc định), True = ping @everyone
 SCREENSHOT_PATH = "/sdcard/pain_screenshot.png"
 
 DISCORD_LINK = "https://discord.gg/z7RUNArBuJ"
@@ -117,7 +118,7 @@ CLEAR_COOLDOWN_SEC = 600
 AUTO_BACKUP = True
 BACKUP_INTERVAL_MIN = 30
 BACKUP_STABLE_SECONDS = 120
-BACKUP_DIR = "/sdcard/PainBackup"
+BACKUP_DIR = "/sdcard/Download/PainBackup"
 BACKUP_EXCLUDE = ("cache", "code_cache")
 
 ROBLOX_ERROR_CODES = [str(c) for c in range(258, 291)] + ["517", "522", "523", "524", "529", "610", "769", "770", "771", "772", "773"]
@@ -557,8 +558,7 @@ BAN_TRACKER = {
 }
 
 # ==================== SELECTED PACKAGES (User Choice) ====================
-SELECTED_PACKAGES = []
-SELECT_ALL_PACKAGES = True
+UNTICKED_PACKAGES = set()  # package đã bỏ tick; mọi package khác mặc định được tick
 EXECUTOR_BINDING = {}
 
 # ==================== CUSTOM PACKAGES (User-defined) ====================
@@ -1231,7 +1231,7 @@ def get_rejoin_mode_str():
     return f"Delay Rejoin ({DELAY_REJOIN_MINUTES}p)"
 
 def load_saved_config():
-    global WEBHOOK_URL, DISCORD_UID, AUTO_CLEAR_DATA, FREEZE_TIMEOUT_MIN, AUTO_BACKUP
+    global WEBHOOK_URL, DISCORD_UID, DISCORD_PING_EVERYONE, AUTO_CLEAR_DATA, FREEZE_TIMEOUT_MIN, AUTO_BACKUP
     global PACKAGE_PREFIX, TARGET_LINK, SELECTED_GAME_NAME, AUTO_REJOIN_MODE, DELAY_REJOIN_MINUTES
     global LOW_RAM_ALERT, LOW_RAM_MB, LOW_RAM_AUTO_CLEAN, NET_CHECK
     global GFX_LOW, GFX_FPS, GFX_AUTO, AUTO_RESTART_HOURS, AUTO_RESTART_ACTION
@@ -1250,6 +1250,7 @@ def load_saved_config():
         return
     WEBHOOK_URL = data.get("webhook_url", "")
     DISCORD_UID = parse_discord_uid(data.get("discord_uid", "")) or ""
+    DISCORD_PING_EVERYONE = bool(data.get("discord_ping_everyone", False))
     AUTO_CLEAR_DATA = bool(data.get("auto_clear_data", AUTO_CLEAR_DATA))
     AUTO_BACKUP = bool(data.get("auto_backup", AUTO_BACKUP))
     QUIET_HOURS.update(data.get("quiet_hours", {}))
@@ -1417,6 +1418,7 @@ def _build_config_dict():
     return {
             "webhook_url": WEBHOOK_URL,
             "discord_uid": DISCORD_UID,
+            "discord_ping_everyone": DISCORD_PING_EVERYONE,
             "auto_clear_data": AUTO_CLEAR_DATA,
             "freeze_timeout_min": FREEZE_TIMEOUT_MIN,
             "auto_backup": AUTO_BACKUP,
@@ -2397,19 +2399,20 @@ def send_webhook(message, with_image=False):
 
         description_text = (
             f"**{message}**\n\n"
-            f"📊 **Thông tin hệ thống:**\n"
-            f"• **Phiên bản:** {VERSION}\n"
-            f"• **Thời gian khởi động:** {start_time_str}\n"
-            f"• **Số Tab đang treo:** {len(packages)} tab ({PACKAGE_PREFIX})\n"
-            f"• **Chế độ Game:** {SELECTED_GAME_NAME}\n"
-            f"• **Cơ chế Rejoin:** {rejoin_mode_str}\n"
-            f"• **Auto Clear Data:** {'Bật (' + str(FREEZE_TIMEOUT_MIN) + 'p)' if AUTO_CLEAR_DATA else 'Tắt'}\n"
-            f"• **Auto Backup:** {'Bật' if AUTO_BACKUP else 'Tắt'}\n"
-            f"• **Thời gian báo cáo:** {now.strftime('%d/%m/%Y lúc %H:%M:%S')}"
+            f"🧭 **Tổng quan**\n"
+            f"• Phiên bản: `{VERSION}`\n"
+            f"• Khởi động lúc: `{start_time_str}`\n"
+            f"• Tab đang quản lý: `{len(packages)}` ({PACKAGE_PREFIX})\n"
+            f"• Game: `{SELECTED_GAME_NAME}`\n"
+            f"• Cơ chế rejoin: `{rejoin_mode_str}`\n\n"
+            f"⚙️ **Chế độ dự phòng**\n"
+            f"• Auto Clear Data: `{'Bật (' + str(FREEZE_TIMEOUT_MIN) + ' phút)' if AUTO_CLEAR_DATA else 'Tắt'}`\n"
+            f"• Auto Backup: `{'Bật' if AUTO_BACKUP else 'Tắt'}`\n\n"
+            f"🕒 Cập nhật lúc `{now.strftime('%d/%m/%Y %H:%M:%S')}`"
         )
 
         embed_obj = {
-            "title": f"PAIN TOOL REJOIN VIP STATUS ({VERSION})",
+            "title": f"📊 Báo cáo trạng thái · PAIN TOOL REJOIN VIP {VERSION}",
             "description": description_text,
             "color": 65280,
             "footer": {"text": footer_text}
@@ -4382,132 +4385,67 @@ def display_upgrade_stats():
     
     print("="*70 + "\n")
 
-def menu_custom_count_mode(packages_list):
-    """Chế độ Custom Count: user nhập số N để chạy N packages đầu"""
-    global SELECTED_PACKAGES, SELECT_ALL_PACKAGES
-    
-    os.system("clear" if os.name == "posix" else "cls")
-    print("\n" + "="*60)
-    print("CUSTOM COUNT MODE - CHẠY N PACKAGES ĐẦU")
-    print("="*60)
-    print(f"\nTổng cộng: {len(packages_list)} packages khả dụng\n")
-    
-    for i, pkg in enumerate(packages_list, 1):
-        print(f"{i:2}. {pkg}")
-    
-    print("\n" + "-"*60)
-    print("Cách sử dụng:")
-    print("  • Nhập số: Chạy N packages đầu (ví dụ: 5 → chạy 5 packages đầu)")
-    print("  • Nhập 0: Chạy tất cả packages")
-    print("  • Nhập q: Quay lại")
-    print("-"*60)
-    
-    user_input = input("\nNhập số lượng (0 = tất cả): ").strip().lower()
-    
-    if user_input == 'q':
-        return
-    
-    try:
-        count = int(user_input)
-        if count == 0:
-            SELECTED_PACKAGES = packages_list.copy()
-            SELECT_ALL_PACKAGES = True
-            print(f"\nChạy tất cả {len(packages_list)} packages")
-        elif 1 <= count <= len(packages_list):
-            SELECTED_PACKAGES = packages_list[:count]
-            SELECT_ALL_PACKAGES = False
-            print(f"\nChạy {count} packages đầu:")
-            for i, pkg in enumerate(SELECTED_PACKAGES, 1):
-                print(f"    {i}. {pkg}")
-        else:
-            print(f"Số không hợp lệ (1-{len(packages_list)})")
-            time.sleep(1)
-            return
-        
-        time.sleep(2)
-    except ValueError:
-        print("Vui lòng nhập số")
-        time.sleep(1)
-
-def menu_selective_mode(packages_list):
-    """Selective: nhập số để thêm/bỏ package khỏi danh sách chạy, thông báo ngay"""
-    global SELECTED_PACKAGES, SELECT_ALL_PACKAGES
-
-    selected = list(SELECTED_PACKAGES) if not SELECT_ALL_PACKAGES else []
+def menu_pick_run_packages(packages_list):
+    """Chọn package để chạy: package đã cài (prefix hoặc custom) mặc định được tick, package mới thêm tự được tick.
+    Nhập số để bỏ tick / tick lại ngay."""
+    global UNTICKED_PACKAGES
     notice = ""
     while True:
+        selected = [p for p in packages_list if p not in UNTICKED_PACKAGES]
         clear_screen()
-        section_title("SELECTIVE MODE - CHỌN PACKAGE CHẠY")
-        print(f"Tổng cộng: {len(packages_list)} package")
-        print(f"Đã chọn: {len(selected)} package")
-        print(f"{C.GRY}(chưa chọn gì thì tool chạy tất cả){C.R}\n")
+        section_title("CHỌN PACKAGE CHẠY")
+        print(f"Tổng cộng: {len(packages_list)} package · Đang tick: {len(selected)}")
+        print(f"{C.GRY}(package mới thêm vào danh sách sẽ tự được tick · bỏ tick hết thì tool chạy tất cả){C.R}\n")
         for i, pkg in enumerate(packages_list, 1):
-            mark = f"{C.GRN}✓{C.R}" if pkg in selected else " "
-            print(f" {C.LPUR}[{i:2}]{C.R} [{mark}] {pkg}")
+            mark = f"{C.GRN}[✓]{C.R}" if pkg in selected else "[ ]"
+            print(f" {mark} [{i}] {pkg}")
         print("\n" + "-" * 50)
-        print("Nhập số để thêm/bỏ package (ví dụ: 1 2 4 hoặc 1,2,4)")
-        print("  • a: Chọn tất cả")
-        print("  • x: Bỏ hết lựa chọn (chạy tất cả)")
-        print("  • ok / q: Quay lại")
+        print("Nhập số để tick/bỏ tick (vd: 1 hoặc 1 2 4 hoặc 1,2,4)")
+        print("  a: tick tất cả   x: bỏ tick hết   0: quay lại")
         print("-" * 50)
         if notice:
             print(f"\n{notice}")
             notice = ""
 
-        user_input = ask("Nhập lựa chọn:").strip().lower()
-
-        if user_input in ("q", "ok"):
+        raw = ask("Nhập:").strip().lower()
+        if raw == "0":
             return
-        if user_input == "a":
-            selected = list(packages_list)
-            SELECTED_PACKAGES = selected.copy()
-            SELECT_ALL_PACKAGES = False
-            notice = f"{C.GRN}✓ Đã chọn tất cả {len(selected)} package.{C.R}"
+        if raw == "a":
+            UNTICKED_PACKAGES.clear()
+            notice = f"{C.GRN}Đã tick tất cả {len(packages_list)} package.{C.R}"
             continue
-        if user_input == "x":
-            selected = []
-            SELECTED_PACKAGES = []
-            SELECT_ALL_PACKAGES = True
-            notice = f"{C.YEL}Đã xóa hết lựa chọn, tool sẽ chạy tất cả package.{C.R}"
+        if raw == "x":
+            UNTICKED_PACKAGES.update(packages_list)
+            notice = f"{C.YEL}Đã bỏ tick hết, tool sẽ chạy tất cả package.{C.R}"
             continue
 
-        indices = []
-        bad = []
-        for part in user_input.replace(",", " ").split():
+        indices, bad = [], []
+        for part in raw.replace(",", " ").split():
             if part.isdigit() and 1 <= int(part) <= len(packages_list):
                 indices.append(int(part) - 1)
             else:
                 bad.append(part)
         if not indices:
-            notice = f"{C.RED}Lựa chọn không hợp lệ (nhập số từ 1 đến {len(packages_list)}).{C.R}"
+            notice = f"{C.RED}Nhập số từ 1 đến {len(packages_list)}.{C.R}"
             continue
-
         msgs = []
         for idx in indices:
             pkg = packages_list[idx]
-            if pkg in selected:
-                selected.remove(pkg)
-                msgs.append(f"{C.YEL}✗ Đã bỏ {pkg} khỏi danh sách chạy.{C.R}")
+            if pkg in UNTICKED_PACKAGES:
+                UNTICKED_PACKAGES.discard(pkg)
+                msgs.append(f"{C.GRN}Tick {pkg}{C.R}")
             else:
-                selected.append(pkg)
-                msgs.append(f"{C.GRN}✓ Đã thêm {pkg} vào danh sách chạy!{C.R}")
+                UNTICKED_PACKAGES.add(pkg)
+                msgs.append(f"{C.YEL}Bỏ tick {pkg}{C.R}")
         if bad:
             msgs.append(f"{C.RED}Bỏ qua: {' '.join(bad)}{C.R}")
         notice = "\n".join(msgs)
 
-        SELECTED_PACKAGES = selected.copy()
-        SELECT_ALL_PACKAGES = not selected
-
 def get_active_packages():
     """Trả về danh sách packages cần chạy (filtered by selection)"""
-    global SELECTED_PACKAGES, SELECT_ALL_PACKAGES
-
     base = run_source_packages()
-
-    picked = [p for p in base if p in SELECTED_PACKAGES]
-    if SELECT_ALL_PACKAGES or not picked:
-        return base
-    return picked
+    picked = [p for p in base if p not in UNTICKED_PACKAGES]
+    return picked if picked else base
 
 def get_running_packages():
     """Package thực sự được chạy: có trong prefix và trong danh sách đã chọn"""
@@ -4574,8 +4512,9 @@ def preflight_items(rows=None):
         items.append(("fail", True, "Chưa có package nào vừa cài game vừa được gán game ID: không thể Start"))
     elif n_ok < len(rows):
         items.append(("warn", False, f"{len(rows) - n_ok} package chưa cài game (màu đỏ), vẫn Start được"))
-    if not SELECT_ALL_PACKAGES and not SELECTED_PACKAGES:
-        items.append(("fail", True, "Chưa chọn package nào để chạy"))
+    _base_pkgs = run_source_packages()
+    if _base_pkgs and all(p in UNTICKED_PACKAGES for p in _base_pkgs):
+        items.append(("warn", False, "Đã bỏ tick hết package: tool sẽ chạy tất cả"))
     if not TARGET_LINK:
         items.append(("warn", False, "Chưa chọn game · app sẽ chỉ được mở, không tự vào Map (Set up → Set up game)"))
     if not webhook_active():
@@ -4583,7 +4522,7 @@ def preflight_items(rows=None):
     return items
 
 def preflight_gate():
-    """Màn hình xác nhận trước khi Start. Trả về True nếu bấm Enter để Start."""
+    """Màn hình xác nhận trước khi Start. Trả về True nếu gõ y để Start."""
     clear_screen()
     section_title("XÁC NHẬN TRƯỚC KHI START")
     rows = preflight_package_rows()
@@ -4623,10 +4562,18 @@ def preflight_gate():
         msg_err("Chưa đủ điều kiện để Start. Sửa các mục ✗ rồi thử lại.")
         wait_enter()
         return False
+    will_run = get_running_packages()
+    if not will_run:
+        msg_err("Không có package nào để chạy. Chọn lại package ở Set up → Chọn package muốn chạy.")
+        wait_enter()
+        return False
+    print(f" {C.WHT}Sẽ chạy {len(will_run)} package:{C.R} " + ", ".join(_short_pkg(p) for p in will_run))
+    print()
     if any(st == "warn" for st, _r, _t in items):
-        return ask("Vẫn tiếp tục Start? [y/N]:").strip().lower() in ("y", "yes")
-    ans = ask("Enter để Start · 0 để quay lại:").strip()
-    return ans != "0"
+        prompt = "Vẫn tiếp tục Start? [y/N]:"
+    else:
+        prompt = f"Xác nhận Start {len(will_run)} package? [y/N]:"
+    return ask(prompt).strip().lower() in ("y", "yes")
 
 def _ask_close_all_after_zero():
     """Sau khi bấm 0 để dừng Start: hỏi có tắt tất cả tab game không. Trả về mô tả để ghi nhật ký."""
@@ -5868,8 +5815,10 @@ def setup_auto_rejoin():
     global AUTO_REJOIN_MODE, DELAY_REJOIN_MINUTES
     clear_screen()
     section_title("SET UP AUTO REJOIN")
-    print(f"{C.LPUR}[1]{C.R} {C.WHT}Auto rejoin vang/crash{C.R}")
-    print(f"{C.LPUR}[2]{C.R} {C.WHT}Delay rejoin{C.R}")
+    m1 = f"{C.GRN}●{C.R} " if AUTO_REJOIN_MODE == 1 else "  "
+    m2 = f"{C.GRN}●{C.R} " if AUTO_REJOIN_MODE == 2 else "  "
+    print(f"{C.LPUR}[1]{C.R} {m1}{C.WHT}Auto rejoin vang/crash{C.R}")
+    print(f"{C.LPUR}[2]{C.R} {m2}{C.WHT}Delay rejoin{C.R}")
     mode = input("Chọn cơ chế [1/2]: ").strip()
     if mode == "1":
         AUTO_REJOIN_MODE = 1
@@ -9864,7 +9813,7 @@ def menu_reset_config():
     """Đặt lại toàn bộ cài đặt về mặc định"""
     global WEBHOOK_URL, DISCORD_UID, TARGET_LINK, SELECTED_GAME_NAME
     global PACKAGE_PREFIX, AUTO_REJOIN_MODE, DELAY_REJOIN_MINUTES
-    global AUTO_CLEAR_DATA, AUTO_BACKUP, SELECTED_PACKAGES, SELECT_ALL_PACKAGES
+    global AUTO_CLEAR_DATA, AUTO_BACKUP, UNTICKED_PACKAGES
     global CUSTOM_PACKAGES, PACKAGE_MODE, ACCOUNTS, PROFILES, SCHEDULE
     global VIP_SERVERS, GAME_PROFILES, ALIASES, EXECUTOR_BINDING, PACKAGE_GAMES
     global LOW_RAM_ALERT, LOW_RAM_MB, LOW_RAM_AUTO_CLEAN
@@ -9910,11 +9859,11 @@ def menu_reset_config():
         pass
 
     # Reset về mặc định
-    WEBHOOK_URL = ""; DISCORD_UID = ""; TARGET_LINK = ""
+    WEBHOOK_URL = ""; DISCORD_UID = ""; DISCORD_PING_EVERYONE = False; TARGET_LINK = ""
     SELECTED_GAME_NAME = "Chưa chọn"; PACKAGE_PREFIX = "com.roblox"
     AUTO_REJOIN_MODE = 1; DELAY_REJOIN_MINUTES = 1
     AUTO_CLEAR_DATA = True; AUTO_BACKUP = True; FREEZE_TIMEOUT_MIN = 5
-    SELECTED_PACKAGES.clear(); SELECT_ALL_PACKAGES = True
+    UNTICKED_PACKAGES.clear()
     CUSTOM_PACKAGES.clear(); PACKAGE_MODE = "prefix"
     ACCOUNTS.clear(); PROFILES.clear(); SCHEDULE.clear()
     VIP_SERVERS.clear(); GAME_PROFILES.clear()
@@ -10154,13 +10103,13 @@ def menu_package_prefix():
                 msg_err("Không tìm thấy package nào đã cài để chạy.")
                 wait_enter()
                 continue
-            menu_run_count_selective(packages_list)
+            menu_pick_run_packages(packages_list)
         else:
             invalid_choice(sub)
 
 def menu_package_mode():
     """Package mode: chứa Package Prefix Mode và Custom Package List"""
-    global PACKAGE_MODE, SELECT_ALL_PACKAGES
+    global PACKAGE_MODE
     while True:
         clear_screen()
         section_title("PACKAGE MODE")
@@ -10178,8 +10127,7 @@ def menu_package_mode():
             menu_setup_package_prefix()
         elif sub == "2":
             PACKAGE_MODE = "custom"
-            SELECTED_PACKAGES.clear()
-            SELECT_ALL_PACKAGES = True
+            UNTICKED_PACKAGES.clear()
             save_config_file()
             menu_custom_packages()
         else:
@@ -10279,35 +10227,6 @@ def menu_setup_package_prefix():
     else:
         pass
     wait_enter()
-
-def menu_run_count_selective(packages_list):
-    """Hiện danh sách package và cho chọn Custom Count hoặc Selective"""
-    while True:
-        clear_screen()
-        section_title("CHỌN CHẾ ĐỘ CHẠY")
-        print(f"{C.GRN}✓ {len(packages_list)} package:{C.R}\n")
-        for i, pkg in enumerate(packages_list, 1):
-            print(f" {C.LPUR}[{i:2}]{C.R} {pkg}")
-        print()
-        if SELECTED_PACKAGES:
-            pass
-        else:
-            print(f"{C.GRY}Đang chọn chạy: tất cả package{C.R}")
-        print(f"\n{C.LPUR}[1]{C.R} {C.WHT}Custom Count Mode{C.R}")
-        print(f"    {C.GRY}chạy N package đầu{C.R}")
-        print(f"{C.LPUR}[2]{C.R} {C.WHT}Selective Mode{C.R}")
-        print(f"    {C.GRY}chọn từng package{C.R}")
-        print(f"{C.RED}[0] Quay lại{C.R}\n")
-        sub = ask("Chọn chế độ:").strip()
-        if sub == "0":
-            return
-        elif sub == "1":
-            menu_custom_count_mode(packages_list)
-        elif sub == "2":
-            menu_selective_mode(packages_list)
-        else:
-            msg_err("Lựa chọn không hợp lệ.")
-            time.sleep(1)
 
 _ANDROID_ID_RX = re.compile(r"[0-9a-f]{16}")
 
@@ -10424,8 +10343,14 @@ def send_test_webhook(url, content, embed_title, embed_desc):
         return False, str(e)[:80]
 
 def ping_mention():
-    """Chuỗi ping dùng chung cho cảnh báo, tin thử và màn hình Webhook: luôn @everyone, kèm UID nếu có."""
-    return "@everyone" + (f" <@{DISCORD_UID}>" if DISCORD_UID else "")
+    """Chuỗi nhắc tới dùng chung cho cảnh báo, tin thử và màn hình Webhook.
+    Mặc định chỉ ping UID đã đặt; chế độ @everyone thì thêm @everyone. Không có gì để ping thì trả về chuỗi rỗng."""
+    parts = []
+    if DISCORD_PING_EVERYONE:
+        parts.append("@everyone")
+    if DISCORD_UID:
+        parts.append(f"<@{DISCORD_UID}>")
+    return " ".join(parts)
 
 def _mask_webhook(url):
     """Che token trong URL webhook, chỉ giữ 4 ký tự cuối."""
@@ -10436,19 +10361,19 @@ def _mask_webhook(url):
 
 def _webhook_status_screen():
     clear_screen()
-    section_title("WEBHOOK URL")
+    section_title("WEBHOOK DISCORD")
     if WEBHOOK_URL:
-        print(f" {C.GRY}Trạng thái  {C.R}{C.GRN}● Đã cài{C.R}")
+        print(f" {C.GRY}Trạng thái  {C.R}{C.GRN}● Đã lưu{C.R}")
         print(f" {C.GRY}URL         {C.R}{C.WHT}{_mask_webhook(WEBHOOK_URL)}{C.R}")
     else:
         print(f" {C.GRY}Trạng thái  {C.R}{C.GRY}○ Chưa cài{C.R}")
-        print(f" {C.GRY}Tool chưa gửi được báo cáo, cảnh báo hay Send Text.{C.R}")
-    print(f" {C.GRY}Ping        {C.R}{C.WHT}{ping_mention()}{C.R}")
+        print(f" {C.GRY}Chưa có webhook: tool sẽ không gửi báo cáo, cảnh báo, Send Text hay ảnh chụp.{C.R}")
+    _ping_now = ping_mention() or "không ping ai (chưa đặt UID)"
+    print(f" {C.GRY}Nhắc tới    {C.R}{C.WHT}{_ping_now}{C.R}")
     print()
     print(f"{C.LPUR}[1]{C.R} {C.WHT}Thêm/đổi webhook{C.R}")
     print(f"{C.LPUR}[2]{C.R} {C.WHT}Thêm/đổi UID Discord{C.R}")
-    print(f"{C.LPUR}[3]{C.R} {C.WHT}Gửi tin thử{C.R}")
-    print(f"{C.LPUR}[4]{C.R} {C.WHT}Xóa webhook{C.R}")
+    print(f"{C.LPUR}[3]{C.R} {C.WHT}Xóa webhook{C.R}")
     print(f"{C.RED}[0] Quay lại{C.R}")
 
 def _webhook_set_url():
@@ -10464,19 +10389,31 @@ def _webhook_set_url():
         return
     WEBHOOK_URL = url
     save_config_file()
-    msg_done("Đã lưu webhook. Chọn [3] để gửi tin thử.")
+    ok_test, info = send_test_webhook(
+        WEBHOOK_URL, ping_mention(), "✅ Kết nối webhook thành công",
+        "PAIN TOOL REJOIN VIP đã kết nối tới kênh này.\nĐây là tin thử từ menu Webhook Discord.")
+    if ok_test:
+        msg_done("Đã lưu webhook và gửi tin kết nối thành công.")
+    else:
+        msg_err(f"Đã lưu webhook nhưng chưa gửi được tin kết nối ({info}). Kiểm tra lại URL.")
     wait_enter()
 
 def _webhook_set_uid():
-    global DISCORD_UID
-    print(f" {C.GRY}Hiện tại: {ping_mention()}{C.R}")
-    raw = ask("Discord ID để ping (a = @everyone, Enter = giữ nguyên):").strip()
+    global DISCORD_UID, DISCORD_PING_EVERYONE
+    print(f" {C.GRY}Hiện tại: {ping_mention() or 'chưa đặt'}{C.R}")
+    print(f" {C.GRY}Nhập Discord ID để đặt UID · x = chỉ ping UID (mặc định) · a = ping @everyone · Enter = giữ nguyên{C.R}")
+    raw = ask("Chọn:").strip()
+    low = raw.lower()
     if not raw:
         print(f" {C.GRY}Giữ nguyên cấu hình ping.{C.R}")
-    elif raw.lower() == "a":
-        DISCORD_UID = ""
+    elif low == "a":
+        DISCORD_PING_EVERYONE = True
         save_config_file()
-        msg_done("Sẽ ping @everyone.")
+        msg_done("Đã bật ping @everyone" + (f" (kèm UID {DISCORD_UID})." if DISCORD_UID else "."))
+    elif low == "x":
+        DISCORD_PING_EVERYONE = False
+        save_config_file()
+        msg_done("Đã chuyển sang chỉ ping UID, không ping @everyone.")
     else:
         uid = parse_discord_uid(raw) or ""
         if not uid:
@@ -10484,21 +10421,9 @@ def _webhook_set_uid():
         else:
             DISCORD_UID = uid
             save_config_file()
-            msg_done(f"Đã đặt ping: {ping_mention()}")
-    wait_enter()
-
-def _webhook_test():
-    if not WEBHOOK_URL:
-        msg_err("Chưa có webhook. Chọn [1] để thêm.")
-        wait_enter()
-        return
-    ok_test, info = send_test_webhook(
-        WEBHOOK_URL, ping_mention(), "Webhook đã kết nối",
-        "PAIN TOOL REJOIN VIP: tin thử từ menu Webhook URL.")
-    if ok_test:
-        msg_done(f"Gửi tin thử thành công ({info}).")
-    else:
-        msg_err(f"Gửi tin thử thất bại ({info}). Kiểm tra lại URL webhook.")
+            msg_done(f"Đã đặt UID: <@{uid}>")
+    if not DISCORD_UID and not DISCORD_PING_EVERYONE:
+        print(f" {C.YEL}Chưa có UID: các tin sẽ không ping ai cho đến khi đặt UID.{C.R}")
     wait_enter()
 
 def _webhook_delete():
@@ -10528,8 +10453,6 @@ def menu_webhook():
         elif sub == "2":
             _webhook_set_uid()
         elif sub == "3":
-            _webhook_test()
-        elif sub == "4":
             _webhook_delete()
         else:
             invalid_choice(sub)
