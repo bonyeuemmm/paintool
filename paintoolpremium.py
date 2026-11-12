@@ -2104,6 +2104,17 @@ def get_device_hwid():
         return "ugphone_fallback_device_123"
 
 # ==================== XÁC THỰC KEY ONLINE (HMAC-SHA256, URLLIB THUẦN PYTHON) ====================
+def _ai_apply_server_key(value):
+    """Nhận khóa AI từ server sau khi xác thực thành công. Chỉ giữ trong bộ nhớ, không ghi ra file."""
+    global AI_API_KEY
+    key = value.strip() if isinstance(value, str) else ""
+    if not _ai_key_is_set(key):
+        return
+    AI_KEYS_INLINE[0] = key
+    AI_API_KEY = key
+    _AI_CLIENTS.pop(0, None)
+    init_ai()
+
 def check_license_curl(key):
     """✓ ONLINE MODE - Xác thực với Express Server qua API (HMAC-SHA256, subprocess curl STABLE).
 
@@ -2213,6 +2224,10 @@ def check_license_curl(key):
             if data.get("valid") is True:
                 LAST_LICENSE_EXPIRES = data.get("expires", "")
                 LAST_LICENSE_REASON = "ok"
+                try:
+                    _ai_apply_server_key(data.get("ai_api_key"))
+                except Exception:
+                    pass
                 return True, "[+] Kích hoạt bản quyền thành công!"
 
             reason = data.get("reason", "server_error")
@@ -5682,7 +5697,6 @@ def menu_server_hop():
         wait_enter()
         return
     elif sub == "0":
-        time.sleep(0.8)
         return
     else:
         time.sleep(1.2)
@@ -5861,7 +5875,6 @@ def setup_auto_clear():
         else:
             msg_err("Chỉ nhận 3, 4 hoặc 5 phút. Giữ nguyên ngưỡng cũ.")
     elif sub == "0":
-        time.sleep(0.8)
         return
     else:
         time.sleep(1.2)
@@ -5885,7 +5898,6 @@ def setup_auto_backup():
     elif sub == "2":
         AUTO_BACKUP = False
     elif sub == "0":
-        time.sleep(0.8)
         return
     else:
         time.sleep(1.2)
@@ -5916,7 +5928,6 @@ def backup_menu():
         print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
-            time.sleep(0.6)
             return
         if sub not in ("1", "2", "3", "4", "5"):
             msg_err(f"Lựa chọn '{sub or '(trống)'}' không hợp lệ.")
@@ -6246,13 +6257,15 @@ def cookie_login_submenu():
         print(f" {C.LPUR}[2]{C.R} {C.WHT}Đọc từ file{C.R} {C.GRY}(mỗi dòng 1 cookie){C.R}")
         print(f" {C.LPUR}[3]{C.R} {C.WHT}Lấy từ clipboard{C.R} {C.GRY}(cần Termux:API){C.R}")
         print(f" {C.LPUR}[4]{C.R} {C.WHT}Batch tự động{C.R}")
+        print(f" {C.LPUR}[5]{C.R} {C.WHT}Đổi nick sang package khác{C.R}")
         print(f" {C.RED}[0] Quay lại{C.R}")
         print()
         sub = ask("Chọn:").strip()
         if sub == "0":
-            msg_info("Quay lại menu cookie...")
-            time.sleep(0.6)
             return
+        if sub == "5":
+            menu_switch_account()
+            continue
         if sub not in ("1", "2", "3", "4"):
             msg_err(f"Lựa chọn '{sub or '(trống)'}' không hợp lệ.")
             time.sleep(1.2)
@@ -6550,20 +6563,107 @@ def get_cookie_account():
         pass
     wait_enter()
 
+def menu_switch_account():
+    """Đổi nick: lấy cookie của package NGUỒN rồi ghi vào package ĐÍCH (1 nguồn → 1 đích mỗi lần)."""
+    clear_screen()
+    section_title("ĐỔI NICK SANG PACKAGE KHÁC")
+    if not root_mode():
+        msg_err("Cần quyền root để đọc và ghi dữ liệu riêng của các tab Roblox.")
+        wait_enter()
+        return
+
+    pool = sorted(list_installed_packages())
+    if len(pool) < 2:
+        msg_err("Cần ít nhất 2 package đã cài để đổi nick.")
+        wait_enter()
+        return
+
+    print(f"{C.GRY}Package trên máy:{C.R}")
+    for i, pkg in enumerate(pool, 1):
+        acc = ACCOUNTS.get(pkg, "")
+        acc_txt = f" {C.LPUR}← {acc}{C.R}" if acc else ""
+        print(f" {C.LPUR}[{i}]{C.R} {pkg}{acc_txt}")
+    print(f" {C.RED}[0] Quay lại{C.R}\n")
+
+    raw = ask("Chọn package NGUỒN (lấy cookie):").strip()
+    if raw == "0" or not raw:
+        return
+    if not (raw.isdigit() and 1 <= int(raw) <= len(pool)):
+        msg_err("Số package nguồn không hợp lệ.")
+        wait_enter()
+        return
+    src = pool[int(raw) - 1]
+
+    cookie, reason = _extract_cookie_from_pkg(src)
+    if not cookie:
+        msg_err(f"Không lấy được cookie của {tab_label(src)}: {reason}")
+        wait_enter()
+        return
+    print(f"  {C.GRY}{cookie_preview(cookie)}{C.R}")
+    state, info = with_spinner("Đang kiểm tra cookie nguồn với Roblox", roblox_check_cookie, cookie)
+    if state is True and isinstance(info, dict):
+        msg_ok(f"Nguồn: {info.get('displayName') or info.get('name')} (@{info.get('name')})")
+    else:
+        msg_info("Chưa xác minh được tên tài khoản của nguồn, vẫn có thể đổi.")
+
+    ask("Nhấn Enter để chọn package ĐĂNG NHẬP (0 để hủy):")
+    raw = ask("Chọn package ĐÍCH (đăng nhập):").strip()
+    if raw == "0" or not raw:
+        return
+    if not (raw.isdigit() and 1 <= int(raw) <= len(pool)):
+        msg_err("Số package đích không hợp lệ.")
+        wait_enter()
+        return
+    tgt = pool[int(raw) - 1]
+    if tgt == src:
+        msg_err("Package đích trùng với package nguồn.")
+        wait_enter()
+        return
+
+    old_cookie, _ = _extract_cookie_from_pkg(tgt)
+    if old_cookie:
+        old_state, old_info = roblox_check_cookie(old_cookie)
+        old_name = old_info.get("name") if old_state is True and isinstance(old_info, dict) else None
+        who = f"@{old_name}" if old_name else "tài khoản chưa xác định"
+        msg_warn(f"{tab_label(tgt)} đang đăng nhập {who}.")
+        if ask("Ghi đè bằng cookie của nguồn? (y/n):").strip().lower() != "y":
+            msg_info("Đã hủy, không ghi gì.")
+            wait_enter()
+            return
+
+    msg_info(f"Đang ghi cookie vào {tab_label(tgt)} (tab sẽ được tắt nếu đang chạy)...")
+    ok, msg = inject_cookie(tgt, cookie)
+    if not ok:
+        msg_err(f"{tab_label(tgt)}: {msg}")
+        wait_enter()
+        return
+    NEEDS_LOGIN.discard(tgt)
+    if state is True and isinstance(info, dict) and info.get("name"):
+        ACCOUNTS[tgt] = info["name"]
+        save_config_file()
+    msg_ok(f"{tab_label(tgt)}: đã đổi sang cookie của {tab_label(src)}.")
+
+    if ask("Mở tab vào game ngay? (y/n):").strip().lower() == "y":
+        if open_game(tgt, hard=True, enter_map=bool(game_link_for(tgt))):
+            msg_ok("Đã gửi lệnh mở tab.")
+        else:
+            msg_err("Không mở được tab, thử mở bằng tay hoặc mục [8].")
+    wait_enter()
+
 def menu_cookie_roblox():
     """Menu chính cho Cookie Roblox - chọn giữa Login hoặc Get Cookie"""
     while True:
         clear_screen()
         section_title("COOKIE ROBLOX")
         
-        print(f"{C.GRY}Quản lý cookie Roblox cho các tab clone của bạn{C.R}\n")
+        print(f" {C.GRY}Quản lý cookie Roblox cho các tab clone của bạn{C.R}\n")
         
-        print(f"{C.LPUR}[1]{C.R} {C.WHT}Đăng nhập cookie{C.R}")
+        print(f" {C.LPUR}[1]{C.R} {C.WHT}Đăng nhập cookie{C.R}")
         print()
         
-        print(f"{C.LPUR}[2]{C.R} {C.WHT}Lấy cookie tài khoản{C.R}")
+        print(f" {C.LPUR}[2]{C.R} {C.WHT}Lấy cookie tài khoản{C.R}")
         
-        print(f"{C.RED}[0] Quay lại{C.R}\n")
+        print(f" {C.RED}[0] Quay lại{C.R}\n")
         
         choice = ask("Chọn chức năng:").strip()
         
@@ -6814,7 +6914,6 @@ def setup_low_ram():
         LOW_RAM_AUTO_CLEAN = not LOW_RAM_AUTO_CLEAN
         msg = f"Tự dọn cache khi RAM thấp: {'BẬT' if LOW_RAM_AUTO_CLEAN else 'TẮT'}"
     elif sub == "0":
-        time.sleep(0.8)
         return
     else:
         time.sleep(1.2)
@@ -6868,7 +6967,6 @@ def menu_profile():
                 pass
             wait_enter()
         elif sub == "0":
-            time.sleep(0.6)
             return
         else:
             invalid_choice(sub)
@@ -6910,7 +7008,6 @@ def menu_schedule():
             msg_done("Đã tắt toàn bộ hẹn giờ.")
             wait_enter()
         elif sub == "0":
-            time.sleep(0.6)
             return
         else:
             invalid_choice(sub)
@@ -6932,7 +7029,6 @@ def menu_alias():
         print(f" {C.RED}[0] Quay lại{C.R}")
         c = input("Chọn tab để đặt / đổi biệt danh (số): ").strip()
         if c == "0":
-            time.sleep(0.6)
             return
         if not (c.isdigit() and 1 <= int(c) <= len(packages)):
             invalid_choice(c)
@@ -6976,7 +7072,6 @@ def setup_net_check():
         wait_enter()
         return
     elif sub == "0":
-        time.sleep(0.8)
         return
     else:
         time.sleep(1.2)
@@ -8730,7 +8825,6 @@ def menu_game_profiles():
             wait_enter()
 
         elif sub == "0":
-            time.sleep(0.6)
             return
         else:
             invalid_choice(sub)
@@ -8764,7 +8858,6 @@ def menu_executor_binding():
         sub = input("Chọn: ").strip()
 
         if sub == "0":
-            time.sleep(0.6)
             return
 
         parts = sub.split()
@@ -9428,7 +9521,6 @@ def menu_key_injector():
         print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
-            time.sleep(0.6)
             return
         if not root_mode() and sub in ("1", "2", "3"):
             msg_err("Cần quyền root để đọc / ghi file key trong dữ liệu của app.")
@@ -9573,7 +9665,6 @@ def menu_screen_guard():
         print(f"{C.RED}[0] Quay lại{C.R}")
         sub = input("Chọn: ").strip()
         if sub == "0":
-            time.sleep(0.6)
             return
         if sub == "1":
             WB_DETECT = not WB_DETECT
