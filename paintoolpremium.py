@@ -2147,7 +2147,7 @@ def check_license_curl(key):
     error_map = {
         "missing_data": "Dữ liệu gửi lên không đủ!",
         "missing_key": "Key không được để trống!",
-        "request_expired": "Thời gian thiết bị lệch quá 30s so với máy chủ!",
+        "request_expired": "Thời gian thiết bị lệch quá 180s so với máy chủ!",
         "invalid_signature": "Chữ ký bảo mật không hợp lệ (Sai SECRET_KEY)!",
         "key_not_found": "Key không tồn tại trên hệ thống!",
         "expired": "Key bản quyền đã hết hạn sử dụng!",
