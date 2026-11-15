@@ -445,8 +445,8 @@ def print_status_table(packages=None):
 
         # Bố cục bảng theo độ rộng còn lại: đủ cột khi rộng, bớt cột khi khung hẹp
         if inner >= 45:
-            sw, rw, mw, ew = 11, 3, 7, 8
-            show_exec, show_map = True, True
+            sw, rw, mw, ew = 11, 3, 7, 0
+            show_exec, show_map = False, True
         elif inner >= 34:
             sw, rw, mw, ew = 8, 3, 7, 0
             show_exec, show_map = False, True
@@ -479,7 +479,6 @@ def print_status_table(packages=None):
 
         st_label = "Trạng thái" if sw >= 10 else "Trạng"
         head = [pad("Tab", nw), pad(st_label, sw), pad("RJ", rw)]
-        if show_exec: head.append(pad("Executor", ew))
         if show_map: head.append(pad("Map", mw))
         print(box_row(f"{C.GRY}{' '.join(head)}{C.R}", w))
         for pkg, text, st in states:
@@ -489,12 +488,9 @@ def print_status_table(packages=None):
             if ACCOUNTS.get(pkg):
                 short = f"{short} ({ACCOUNTS[pkg]})"
             in_map = fmt_duration(now - JOINED_AT[pkg]) if pkg in JOINED_AT and st else "—"
-            exe = EXECUTOR_BINDING.get(pkg, "—")
-            exe_display = exe if exe in EXECUTOR_NAMES else "—"
             cells = [pad(clip(short, nw), nw),
                      pad(dot(st) + " " + clip(text, max(1, sw - 2)), sw),
                      pad(str(REJOIN_COUNT.get(pkg, 0)), rw)]
-            if show_exec: cells.append(pad(clip(exe_display, ew), ew))
             if show_map: cells.append(pad(clip(in_map, mw), mw))
             print(box_row(" ".join(cells), w))
         print(box_bot(w))
@@ -533,6 +529,8 @@ RUN_LIMIT_HOURS = 0
 QUIET_HOURS = {"enabled": False, "start": "23:00", "end": "07:00"}
 STOP_TIMER = {"enabled": False, "hours": 6, "close_apps": False}
 MONITOR_ONLY = False
+RETRY_COUNTDOWN_ON = True  # đếm ngược trước khi rejoin (mặc định bật)
+AUTO_LOGIN_KEY = True  # tự xác thực key đã lưu khi mở tool (mặc định bật)
 SCREEN_ARCHIVE = {"enabled": False}
 ROBLOX_VERSIONS = {}
 SHOT_DIR = "/sdcard/Pictures/PainTool"
@@ -559,7 +557,6 @@ BAN_TRACKER = {
 
 # ==================== SELECTED PACKAGES (User Choice) ====================
 UNTICKED_PACKAGES = set()  # package đã bỏ tick; mọi package khác mặc định được tick
-EXECUTOR_BINDING = {}
 
 # ==================== CUSTOM PACKAGES (User-defined) ====================
 CUSTOM_PACKAGES = []
@@ -1236,8 +1233,8 @@ def load_saved_config():
     global LOW_RAM_ALERT, LOW_RAM_MB, LOW_RAM_AUTO_CLEAN, NET_CHECK
     global GFX_LOW, GFX_FPS, GFX_AUTO, AUTO_RESTART_HOURS, AUTO_RESTART_ACTION
     global KEY_AUTO, WB_DETECT, OVERLAY_DETECT, SERVER_HOP, HOP_PING_MS
-    global GAME_PROFILES, EXECUTOR_BINDING, PACKAGE_GAMES
-    global AI_API_KEY, AI_ENABLED, MONITOR_ONLY
+    global GAME_PROFILES, PACKAGE_GAMES
+    global AI_API_KEY, AI_ENABLED, MONITOR_ONLY, RETRY_COUNTDOWN_ON, AUTO_LOGIN_KEY
     global QUIET_HOURS, STOP_TIMER, SCREEN_ARCHIVE, ROBLOX_VERSIONS
     if not os.path.exists(CONFIG_FILE):
         return
@@ -1256,6 +1253,8 @@ def load_saved_config():
     QUIET_HOURS.update(data.get("quiet_hours", {}))
     STOP_TIMER.update(data.get("stop_timer", {}))
     MONITOR_ONLY = bool(data.get("monitor_only", MONITOR_ONLY))
+    RETRY_COUNTDOWN_ON = bool(data.get("retry_countdown_on", RETRY_COUNTDOWN_ON))
+    AUTO_LOGIN_KEY = bool(data.get("auto_login_key", AUTO_LOGIN_KEY))
     SCREEN_ARCHIVE.update(data.get("screen_archive", {}))
     ROBLOX_VERSIONS.update(data.get("app_versions", {}))
     _ai = data.get("ai_settings", {})
@@ -1373,12 +1372,6 @@ def load_saved_config():
                     "server_hop_enabled": profile.get("server_hop_enabled", SERVER_HOP),
                 }
 
-    eb = data.get("executor_binding")
-    if isinstance(eb, dict):
-        EXECUTOR_BINDING.clear()
-        for pkg, exe in eb.items():
-            if isinstance(exe, str) and exe in EXECUTOR_NAMES:
-                EXECUTOR_BINDING[str(pkg)] = exe
 
     pg = data.get("package_games")
     if isinstance(pg, dict):
@@ -1425,6 +1418,8 @@ def _build_config_dict():
             "quiet_hours": QUIET_HOURS,
             "stop_timer": STOP_TIMER,
             "monitor_only": MONITOR_ONLY,
+            "retry_countdown_on": RETRY_COUNTDOWN_ON,
+            "auto_login_key": AUTO_LOGIN_KEY,
             "screen_archive": SCREEN_ARCHIVE,
             "app_versions": ROBLOX_VERSIONS,
             "package_prefix": PACKAGE_PREFIX,
@@ -1454,7 +1449,6 @@ def _build_config_dict():
             "hop_ping_ms": HOP_PING_MS,
             "vip_servers": VIP_SERVERS,
             "game_profiles": GAME_PROFILES,
-            "executor_binding": EXECUTOR_BINDING,
             "package_games": PACKAGE_GAMES,
             "anti_afk": ANTI_AFK,
             "ai_settings": AI_SETTINGS,
@@ -1568,7 +1562,7 @@ class C:
     PUR = "\033[1;35m"
     LPUR = "\033[38;5;141m"
     GRN = "\033[1;32m"
-    DGRN = "\033[1;38;5;28m"  # xanh lá đậm (dùng cho chữ Start)
+    DGRN = "\033[1;38;5;46m"  # xanh lá đậm và sáng (in đậm, màu 46) cho chữ Start
     RED = "\033[1;31m"
     YEL = "\033[1;33m"
     CYN = "\033[1;36m"
@@ -2327,6 +2321,14 @@ def notify_bot_hwid_linked(key_str, hwid_str, discord_id=""):
         log_event("ERROR", detail=f"notify_bot_hwid_linked error: {str(e)}")
         return False
 
+def _auto_login_key_enabled():
+    """Đọc công tắc tự nhập key ngay từ file cấu hình (authenticate chạy trước khi cấu hình được nạp)."""
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return bool(json.load(f).get("auto_login_key", True))
+    except Exception:
+        return True
+
 def authenticate():
     """✓ XÁC THỰC BẢN QUYỀN - Logic rõ ràng:
     1. Nếu file .pain_license tồn tại & xác thực thành công -> return ngay (thoát hàm)
@@ -2350,7 +2352,7 @@ def authenticate():
         print(f" {st_line}")
 
     # ==================== BƯỚC 1: TỰ ĐỘNG LOAD KEY ĐÃ LƯU ====================
-    if saved_key:
+    if saved_key and _auto_login_key_enabled():
         is_valid, _ = with_spinner("Đang xác thực key đã lưu", check_license_curl, saved_key)
         if is_valid:
             device_activated(profile, saved_key)
@@ -3593,12 +3595,14 @@ def retry_countdown(pkg, why):
         stopped, _down = wait_for_network(pkg)
         if stopped:
             return True
+    if not RETRY_COUNTDOWN_ON:
+        return False  # tắt đếm ngược: rejoin ngay
     for sec in range(RETRY_COUNTDOWN_SECONDS, 0, -1):
         print(f"{sec}..", end=" ", flush=True)
         if wait_with_stop_check(1):
             print("\033[0m")
             return True
-    print("\033[0m")
+    print(f"{C.GRN}OK!{C.R}")
     return False
 
 _JOIN_EXHAUSTED = object()   # tín hiệu: đã hết LAUNCH_MAX_RETRY lần vào Map mà chưa thành công
@@ -5858,9 +5862,8 @@ def show_banner():
         ("9", "Backup"),
         ("10", "Cookie Roblox"),
         ("11", "Xem log"),
-        ("12", "Gán executor"),
-        ("13", "Anti-AFK"),
-        ("14", "Cài đặt"),
+        ("12", "Anti-AFK"),
+        ("13", "Cài đặt"),
         ("0", "Exit"),
     ]
 
@@ -8364,91 +8367,6 @@ def _lib_manage():
         _lib_script_menu(int(raw) - 1)
 
 # ---------- gán game ----------
-def _lib_assign():
-    while True:
-        clear_screen()
-        section_title("GÁN SCRIPT CHO GAME")
-        data = _lib_load()
-        if not data["scripts"]:
-            wait_enter()
-            return
-        _lib_print_list(data)
-        print(f"\n {C.GRY}Script không gán game nào sẽ chạy cho mọi game.{C.R}")
-        raw = ask("Chọn script (số, 0 quay lại):").strip()
-        if raw in ("", "0"):
-            return
-        if not raw.isdigit() or not 1 <= int(raw) <= len(data["scripts"]):
-            invalid_choice(raw)
-            time.sleep(0.8)
-            continue
-        e = data["scripts"][int(raw) - 1]
-        while True:
-            clear_screen()
-            section_title(f"GÁN GAME: {e['name']}")
-            games = e.get("games") or []
-            if games:
-                print(f" {C.WHT}Đang gán cho:{C.R}")
-                for g in games:
-                    print(f"   - {_game_name(g)} {C.GRY}({g}){C.R}")
-            else:
-                print(f" {C.GRY}Chưa gán game nào (chạy cho mọi game).{C.R}")
-            print()
-            if TARGET_LINK:
-                print(f"{C.LPUR}[1]{C.R} {C.WHT}Thêm game đang chọn: {SELECTED_GAME_NAME or TARGET_LINK}{C.R}")
-            print(f"{C.LPUR}[2]{C.R} {C.WHT}Thêm từ danh sách game{C.R}")
-            print(f"{C.LPUR}[3]{C.R} {C.WHT}Thêm bằng ID / link tùy ý{C.R}")
-            print(f"{C.LPUR}[4]{C.R} {C.WHT}Gỡ 1 game khỏi danh sách{C.R}")
-            print(f"{C.LPUR}[5]{C.R} {C.WHT}Bỏ gán{C.R}")
-            print(f"{C.RED}[0] Quay lại{C.R}\n")
-            sub = ask("Chọn:").strip()
-            changed = False
-            if sub == "0":
-                break
-            elif sub == "1" and TARGET_LINK:
-                gid = str(TARGET_LINK)
-                if gid not in games:
-                    games.append(gid); changed = True
-            elif sub == "2":
-                for i, (name, gid) in enumerate(GAMES.values(), 1):
-                    print(f"  {C.WHT}{i:2}. {name}{C.R} {C.GRY}({gid}){C.R}")
-                pick = ask("Chọn số game:").strip()
-                if pick.isdigit() and 1 <= int(pick) <= len(GAMES):
-                    gid = str(list(GAMES.values())[int(pick) - 1][1])
-                    if gid not in games:
-                        games.append(gid); changed = True
-                else:
-                    invalid_choice(pick)
-                    time.sleep(0.8)
-            elif sub == "3":
-                gid = ask("Nhập ID game hoặc link server VIP:").strip()
-                if gid:
-                    if gid not in games:
-                        games.append(gid); changed = True
-                    else:
-                        time.sleep(0.8)
-            elif sub == "4":
-                if not games:
-                    time.sleep(0.8)
-                else:
-                    pick = ask(f"Số thứ tự (1-{len(games)}):").strip()
-                    if pick.isdigit() and 1 <= int(pick) <= len(games):
-                        games.pop(int(pick) - 1); changed = True
-            elif sub == "5":
-                games = []; changed = True
-            else:
-                invalid_choice(sub)
-                time.sleep(0.8)
-            if changed:
-                e["games"] = games
-                e["updated"] = _now_iso()
-                data = _lib_load()
-                for x in data["scripts"]:
-                    if x.get("id") == e["id"]:
-                        x["games"] = games
-                        x["updated"] = e["updated"]
-                _lib_save(data)
-                msg_done("Đã cập nhật. Nhớ Sync lại để áp dụng.")
-                time.sleep(0.8)
 
 # ---------- sync ----------
 def _lib_sync():
@@ -8507,74 +8425,8 @@ def _lib_sync():
     wait_enter()
 
 # ---------- kiểm tra syntax ----------
-def _lib_check_syntax():
-    clear_screen()
-    section_title("KIỂM TRA SYNTAX LUA")
-    data = _lib_load()
-    if not data["scripts"]:
-        wait_enter()
-        return
-    _lib_print_list(data)
-    print(f"\n {C.GRY}Nhập số để kiểm tra · a = tất cả · 0 quay lại{C.R}")
-    raw = ask("Chọn:").strip().lower()
-    if raw in ("", "0"):
-        return
-    if raw == "a":
-        targets = list(range(len(data["scripts"])))
-    elif raw.isdigit() and 1 <= int(raw) <= len(data["scripts"]):
-        targets = [int(raw) - 1]
-    else:
-        invalid_choice(raw)
-        wait_enter()
-        return
-    print()
-    tool = ""
-    for i in targets:
-        e = data["scripts"][i]
-        warns, tool = lua_check(_lib_read(e))
-        if warns:
-            for w in warns[:5]:
-                print(f"       - {w}")
-        else:
-            print(f" {C.GRN}[✓]{C.R} {e['name']}")
-    print(f"\n {C.GRY}Công cụ kiểm tra: {tool}{C.R}")
-    if not shutil.which("luac") and not shutil.which("luac5.4"):
-        print(f" {C.GRY}Gợi ý: pkg install lua54 để có luac, kiểm tra chính xác hơn.{C.R}")
-    wait_enter()
 
 # ---------- thống kê ----------
-def _lib_stats():
-    clear_screen()
-    section_title("THỐNG KÊ & BÁO CÁO AUTO EXECUTE")
-    data = _lib_load()
-    scripts = data["scripts"]
-    enabled = [e for e in scripts if e.get("enabled", True)]
-    total_chars = sum(e.get("size", 0) for e in scripts)
-    print(f" Tổng script: {C.WHT}{len(scripts)}{C.R} · Đang bật: {C.GRN}{len(enabled)}{C.R} · Đang tắt: {C.RED}{len(scripts) - len(enabled)}{C.R}")
-    print(f" Tổng dung lượng: {total_chars / 1024:.1f} KB")
-    any_game = [e for e in scripts if not e.get("games")]
-    print(f" Chạy cho mọi game: {len(any_game)} script")
-    by_game = {}
-    for e in scripts:
-        for g in e.get("games") or []:
-            by_game[g] = by_game.get(g, 0) + 1
-    if by_game:
-        print(f"\n {C.WHT}Theo game:{C.R}")
-        for g, n in sorted(by_game.items(), key=lambda kv: -kv[1]):
-            print(f"   {_game_name(g)}: {n} script")
-    bad = []
-    for e in scripts:
-        if lua_check(_lib_read(e))[0]:
-            bad.append(e["name"])
-    for n in bad[:10]:
-        print(f"   - {n}")
-    ls = data.get("last_sync")
-    if ls:
-        r = data.get("last_sync_result") or {}
-        print(f"\n Lần sync gần nhất: {ls} · {r.get('ok', 0)}/{r.get('total', 0)} file · {r.get('dirs', 0)} thư mục")
-    else:
-        print(f"\n {C.GRY}Chưa sync lần nào.{C.R}")
-    wait_enter()
 
 def _is_autoexec_name(n):
     """Nhận mọi cách viết của thư mục autoexec: autoexec, AutoExec, AUTOEXEC, auto_exec, auto-exec,
@@ -8755,10 +8607,7 @@ def menu_autoexec_pro():
         print(f"{C.LPUR}[1]{C.R} {C.WHT}Thêm script mới{C.R}")
         print(f"{C.LPUR}[2]{C.R} {C.WHT}Thêm script vào mục scripts (executor){C.R}")
         print(f"{C.LPUR}[3]{C.R} {C.WHT}Quản lý script{C.R}")
-        print(f"{C.LPUR}[4]{C.R} {C.WHT}Gán script cho game{C.R}")
-        print(f"{C.LPUR}[5]{C.R} {C.WHT}Sync sang executor / tab{C.R}")
-        print(f"{C.LPUR}[6]{C.R} {C.WHT}Kiểm tra syntax Lua{C.R}")
-        print(f"{C.LPUR}[7]{C.R} {C.WHT}Thống kê & báo cáo{C.R}")
+        print(f"{C.LPUR}[4]{C.R} {C.WHT}Sync sang executor / tab{C.R}")
         print(f"{C.RED}[0] Quay lại{C.R}\n")
         sub = ask("Chọn:").strip()
         if sub == "0":
@@ -8770,13 +8619,7 @@ def menu_autoexec_pro():
         elif sub == "3":
             _lib_manage()
         elif sub == "4":
-            _lib_assign()
-        elif sub == "5":
             _lib_sync()
-        elif sub == "6":
-            _lib_check_syntax()
-        elif sub == "7":
-            _lib_stats()
         else:
             invalid_choice(sub)
 
@@ -8890,63 +8733,6 @@ def menu_game_profiles():
             invalid_choice(sub)
 
 # ==================== EXECUTOR BINDING (GÁN EXECUTOR CHO TAB) ====================
-def menu_executor_binding():
-    while True:
-        clear_screen()
-        section_title("GÁN EXECUTOR CHO TAB")
-        print(f" {C.GRY}Chọn executor nào sẽ chạy cho từng tab clone.{C.R}\n")
-
-        packages = sorted(get_all_packages())
-        if not packages:
-            wait_enter()
-            return
-
-        print(f" {C.WHT}Danh sách executor có sẵn:{C.R}")
-        for i, exe in enumerate(EXECUTOR_NAMES, 1):
-            print(f"  {i:2}. {exe}")
-        print()
-
-        print(f" {C.WHT}Tab hiện tại và executor được gán:{C.R}")
-        for i, pkg in enumerate(packages, 1):
-            short = ALIASES.get(pkg) or _short_pkg(pkg)
-            exe = EXECUTOR_BINDING.get(pkg, "—")
-            exe_display = exe if exe in EXECUTOR_NAMES else "—"
-        print()
-
-        print(f"\033[1;37m[Nhập số tab] [Nhập số executor] để gán (vd: 1 2 = Tab 1 dùng Codex){C.R}")
-        print(f"{C.RED}[0] Quay lại{C.R}")
-        sub = input("Chọn: ").strip()
-
-        if sub == "0":
-            return
-
-        parts = sub.split()
-        if len(parts) != 2:
-            invalid_choice(sub)
-            wait_enter()
-            continue
-
-        if not (parts[0].isdigit() and parts[1].isdigit()):
-            invalid_choice(sub)
-            wait_enter()
-            continue
-
-        tab_idx = int(parts[0]) - 1
-        exe_idx = int(parts[1]) - 1
-
-        if not (0 <= tab_idx < len(packages)) or not (0 <= exe_idx < len(EXECUTOR_NAMES)):
-            msg_err("Chỉ số tab hoặc executor không hợp lệ.")
-            wait_enter()
-            continue
-
-        pkg = packages[tab_idx]
-        exe = EXECUTOR_NAMES[exe_idx]
-        EXECUTOR_BINDING[pkg] = exe
-
-        short = ALIASES.get(pkg) or _short_pkg(pkg)
-        msg_done(f"Đã gán {exe} cho tab: {short}")
-        save_config_file()
-        wait_enter()
 
 MENU_NAMES = {
     "1": "Bắt đầu", 
@@ -8960,9 +8746,8 @@ MENU_NAMES = {
     "9": "Backup", 
     "10": "Cookie Roblox", 
     "11": "Xem log",
-    "12": "Gán executor",
-    "13": "Anti-AFK",
-    "14": "Cài đặt",
+    "12": "Anti-AFK",
+    "13": "Cài đặt",
     "0": "Exit",
 }
 
@@ -9825,6 +9610,20 @@ def menu_stop_timer():
         else:
             invalid_choice(sub)
 
+def toggle_auto_login_key():
+    global AUTO_LOGIN_KEY
+    AUTO_LOGIN_KEY = not AUTO_LOGIN_KEY
+    save_config_file()
+    msg_done("Tự động nhập key đã lưu: " + ("BẬT" if AUTO_LOGIN_KEY else "TẮT (sẽ hỏi nhập key khi mở tool)"))
+    time.sleep(1.2)
+
+def toggle_retry_countdown():
+    global RETRY_COUNTDOWN_ON
+    RETRY_COUNTDOWN_ON = not RETRY_COUNTDOWN_ON
+    save_config_file()
+    msg_done("Đếm ngược trước khi rejoin: " + (f"BẬT ({RETRY_COUNTDOWN_SECONDS} giây)" if RETRY_COUNTDOWN_ON else "TẮT (rejoin ngay)"))
+    time.sleep(1.2)
+
 def toggle_monitor_only():
     global MONITOR_ONLY
     MONITOR_ONLY = not MONITOR_ONLY
@@ -9966,7 +9765,7 @@ def menu_reset_config():
     global PACKAGE_PREFIX, AUTO_REJOIN_MODE, DELAY_REJOIN_MINUTES
     global AUTO_CLEAR_DATA, AUTO_BACKUP, UNTICKED_PACKAGES
     global CUSTOM_PACKAGES, PACKAGE_MODE, ACCOUNTS, PROFILES, SCHEDULE
-    global VIP_SERVERS, GAME_PROFILES, ALIASES, EXECUTOR_BINDING, PACKAGE_GAMES
+    global VIP_SERVERS, GAME_PROFILES, ALIASES, PACKAGE_GAMES
     global LOW_RAM_ALERT, LOW_RAM_MB, LOW_RAM_AUTO_CLEAN
     global GFX_LOW, GFX_FPS, GFX_AUTO, NET_CHECK
     global AUTO_RESTART_HOURS, AUTO_RESTART_ACTION
@@ -10018,7 +9817,7 @@ def menu_reset_config():
     CUSTOM_PACKAGES.clear(); PACKAGE_MODE = "prefix"
     ACCOUNTS.clear(); PROFILES.clear(); SCHEDULE.clear()
     VIP_SERVERS.clear(); GAME_PROFILES.clear()
-    ALIASES.clear(); EXECUTOR_BINDING.clear(); PACKAGE_GAMES.clear()
+    ALIASES.clear(); PACKAGE_GAMES.clear()
     LOW_RAM_ALERT = False; LOW_RAM_MB = 500; LOW_RAM_AUTO_CLEAN = False
     GFX_LOW = False; GFX_FPS = 60; GFX_AUTO = False; NET_CHECK = True
     AUTO_RESTART_HOURS = 0; AUTO_RESTART_ACTION = "restart"
@@ -10906,6 +10705,8 @@ def menu_settings():
         ("Chế độ chỉ theo dõi", toggle_monitor_only),
         ("Lưu ảnh khi có lỗi nghiêm trọng", toggle_screen_archive),
         ("Tự động start khi khởi động", menu_autostart_boot),
+        ("Đếm ngược 5 giây trước khi rejoin", toggle_retry_countdown),
+        ("Tự động nhập key đã lưu", toggle_auto_login_key),
     ]
     while True:
         clear_screen()
@@ -10917,6 +10718,10 @@ def menu_settings():
             elif label == "Lưu ảnh khi có lỗi nghiêm trọng":
                 on = SCREEN_ARCHIVE.get("enabled")
                 shown = f"{label} [{C.GRN}Bật{C.R}]" if on else f"{label} [{C.GRY}Tắt{C.R}]"
+            elif label == "Đếm ngược 5 giây trước khi rejoin":
+                shown = f"{label} [{C.GRN}Bật{C.R}]" if RETRY_COUNTDOWN_ON else f"{label} [{C.GRY}Tắt{C.R}]"
+            elif label == "Tự động nhập key đã lưu":
+                shown = f"{label} [{C.GRN}Bật{C.R}]" if AUTO_LOGIN_KEY else f"{label} [{C.GRY}Tắt{C.R}]"
             print(f"{C.LPUR}[{i}]{C.R} {C.WHT}{shown}{C.R}")
         print(f"{C.RED}[0] Quay lại{C.R}\n")
         sub = input("Chọn: ").strip()
@@ -10954,7 +10759,7 @@ def verify_and_start():
     while True:
         license_guard_tick()
         show_banner()
-        choice = ask_main("Chọn chức năng [0-14]:").strip()
+        choice = ask_main("Chọn chức năng [0-13]:").strip()
         if choice.lower() == "help":
             show_help()
             continue
@@ -10987,10 +10792,8 @@ def verify_and_start():
         elif choice == "11":
             menu_view_log()
         elif choice == "12":
-            menu_executor_binding()
-        elif choice == "13":
             menu_anti_afk()
-        elif choice == "14":
+        elif choice == "13":
             menu_settings()
 
 
