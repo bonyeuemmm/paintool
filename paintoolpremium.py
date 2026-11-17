@@ -1673,6 +1673,20 @@ def msg_info(text):
 def msg_done(text):
     print(f"\n {C.GRN}[✓] {text}{C.R}")
 
+def run_action(fn, *args, **kwargs):
+    """Thao tác trong menu: 'Đang xử lý...' (vàng), rồi 'Thành công' (xanh lá) hoặc 'Thất bại' (đỏ)."""
+    flash("Đang xử lý...", "info")
+    try:
+        res = fn(*args, **kwargs)
+    except Exception as e:
+        flash(f"Thất bại: {e}", "err")
+        return None
+    if res is False:
+        flash("Thất bại", "err")
+        return res
+    flash("Thành công", "ok")
+    return res
+
 def flash(text, kind="info", secs=1.5):
     """Dòng thông báo ngắn: dấu ▸ tím, chữ màu theo loại (info/warn vàng, ok xanh lá, err đỏ), hiện vài giây."""
     color = {"info": C.YEL, "warn": C.YEL, "ok": C.GRN, "err": C.RED}.get(kind, C.YEL)
@@ -8626,7 +8640,7 @@ def menu_autoexec_pro():
         elif sub == "1":
             _lib_add_script()
         elif sub == "2":
-            _lib_add_to_executor_scripts()
+            run_action(_lib_add_to_executor_scripts)
         elif sub == "3":
             _lib_manage()
         elif sub == "4":
@@ -10414,11 +10428,11 @@ def menu_webhook():
         if sub == "0":
             return
         elif sub == "1":
-            _webhook_set_url()
+            run_action(_webhook_set_url)
         elif sub == "2":
-            _webhook_set_uid()
+            run_action(_webhook_set_uid)
         elif sub == "3":
-            _webhook_delete()
+            run_action(_webhook_delete)
         else:
             invalid_choice(sub)
 
