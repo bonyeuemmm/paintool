@@ -1673,6 +1673,12 @@ def msg_info(text):
 def msg_done(text):
     print(f"\n {C.GRN}[✓] {text}{C.R}")
 
+def flash(text, kind="info", secs=1.5):
+    """Dòng thông báo ngắn: dấu ▸ tím, chữ màu theo loại (info/warn vàng, ok xanh lá, err đỏ), hiện vài giây."""
+    color = {"info": C.YEL, "warn": C.YEL, "ok": C.GRN, "err": C.RED}.get(kind, C.YEL)
+    print(f" {C.PUR}▸{C.R} {color}{text}{C.R}")
+    time.sleep(secs)
+
 def msg_warn(text):
     print(f" {C.YEL}[!] {text}{C.R}")
 
@@ -3688,9 +3694,9 @@ def join_map(pkg, hard=False):
     while result is _JOIN_EXHAUSTED and resets < MULTITASK_RESET_MAX and not stop_start:
         resets += 1
         print(f"\033[1;33m[!] {tab_label(pkg)}: {LAUNCH_MAX_RETRY} lần vào Map đều thất bại. "
-              f"Đếm ngược {RETRY_COUNTDOWN_SECONDS}s rồi tự tắt Đa nhiệm và thử lại (đợt {resets}/{MULTITASK_RESET_MAX})...\033[0m")
+              f"Tự tắt Đa nhiệm ngay và thử lại (đợt {resets}/{MULTITASK_RESET_MAX}).\033[0m")
         log_event("WARN", pkg, f"{LAUNCH_MAX_RETRY} lần vào Map thất bại, tự tắt Đa nhiệm rồi thử lại (đợt {resets})")
-        if retry_countdown(pkg, f"{LAUNCH_MAX_RETRY} lần vào Map không thành công"):
+        if stop_start:
             return False
         reset_multitask(pkg)
         result = _join_attempts(pkg, hard=True)
@@ -6124,6 +6130,9 @@ def ensure_cookie_db(pkg):
     db = find_cookie_db(pkg)
     if db:
         return db
+    # Chưa có dữ liệu đăng nhập: chỉ mở game khi bạn đồng ý
+    if ask("Tab này chưa có dữ liệu đăng nhập, cần mở game 1 lần để tạo. Mở ngay? (y/n):").strip().lower() != "y":
+        return None
     open_game(pkg, hard=True, enter_map=False)
     for _ in range(15):
         time.sleep(2)
@@ -8372,6 +8381,7 @@ def _lib_manage():
 def _lib_sync():
     clear_screen()
     section_title("SYNC SCRIPT SANG EXECUTOR / TAB")
+    flash("Đang đồng bộ script...", "info")
     data = _lib_load()
     if not data["scripts"]:
         wait_enter()
@@ -8491,9 +8501,10 @@ def _scan_executor_instances():
 def _pick_executor_targets(kind):
     """Hiện các bản executor tìm được, người dùng chọn số. kind = 'autoexec' hoặc 'scripts'.
     Trả về [(tên, thư mục đích)] đã chọn. Bản không hỗ trợ (không có mục scripts) bị bỏ qua."""
+    flash("Đang quét executor...", "info")
     instances = _scan_executor_instances()
     if not instances:
-        msg_err("Không tìm thấy bản executor nào trên máy (thư mục kiểu delta1, codex2...).")
+        flash("Chưa có executor nào (không thấy thư mục kiểu delta1, codex2...)", "warn")
         wait_enter()
         return []
     rows = []
@@ -8536,7 +8547,7 @@ def _write_file_to_targets(src_path, fname, targets):
             ok += 1
             print(f" {C.GRN}✓{C.R} {label}: {dst}")
         else:
-            print(f" {C.RED}✗{C.R} {label}: không ghi được")
+            flash(f"Không ghi được file vào {label}", "err")
     return ok
 
 def _lib_add_to_executor_scripts():
@@ -9613,6 +9624,7 @@ def menu_stop_timer():
 def toggle_auto_login_key():
     global AUTO_LOGIN_KEY
     AUTO_LOGIN_KEY = not AUTO_LOGIN_KEY
+    flash("Đang lưu cấu hình...", "info")
     save_config_file()
     msg_done("Tự động nhập key đã lưu: " + ("BẬT" if AUTO_LOGIN_KEY else "TẮT (sẽ hỏi nhập key khi mở tool)"))
     time.sleep(1.2)
@@ -9620,6 +9632,7 @@ def toggle_auto_login_key():
 def toggle_retry_countdown():
     global RETRY_COUNTDOWN_ON
     RETRY_COUNTDOWN_ON = not RETRY_COUNTDOWN_ON
+    flash("Đang lưu cấu hình...", "info")
     save_config_file()
     msg_done("Đếm ngược trước khi rejoin: " + (f"BẬT ({RETRY_COUNTDOWN_SECONDS} giây)" if RETRY_COUNTDOWN_ON else "TẮT (rejoin ngay)"))
     time.sleep(1.2)
@@ -9627,12 +9640,14 @@ def toggle_retry_countdown():
 def toggle_monitor_only():
     global MONITOR_ONLY
     MONITOR_ONLY = not MONITOR_ONLY
+    flash("Đang lưu cấu hình...", "info")
     save_config_file()
     msg_done("Chế độ chỉ theo dõi: " + ("BẬT (không rejoin, vẫn gửi cảnh báo)" if MONITOR_ONLY else "TẮT"))
     time.sleep(1.2)
 
 def toggle_screen_archive():
     SCREEN_ARCHIVE["enabled"] = not SCREEN_ARCHIVE.get("enabled", False)
+    flash("Đang lưu cấu hình...", "info")
     save_config_file()
     msg_done("Lưu ảnh khi có lỗi nghiêm trọng: " + ("BẬT" if SCREEN_ARCHIVE["enabled"] else "TẮT"))
     if SCREEN_ARCHIVE["enabled"]:
@@ -10745,10 +10760,6 @@ def verify_and_start():
         refresh_remote_games()
     except Exception:
         pass
-    try:
-        weekly_backup_if_due()
-    except Exception:
-        pass
     # Khởi tạo AI từ khóa đặt trong code
     ai_key = globals().get('AI_API_KEY')
     if ai_key:
@@ -10769,6 +10780,8 @@ def verify_and_start():
             continue
         if choice == "0":
             exit_tool()
+        if choice not in ("0", "1"):
+            flash("Đang mở menu...", "info")
         if choice == "1":
             start_tool()
         elif choice == "2":
@@ -10795,6 +10808,8 @@ def verify_and_start():
             menu_anti_afk()
         elif choice == "13":
             menu_settings()
+        if choice not in ("0", "1"):
+            flash("Đã thoát menu", "ok")
 
 
 def menu_autostart_boot():
